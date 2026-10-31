@@ -20,6 +20,8 @@ type
     destructor Destroy; override;
     function GetSelector(const AName: string; out AValue: string): boolean;
     procedure SyncSelectors(values: TDictionary<string, string>; const scope: TArray<string>);
+    function GetBool(const AName: string; out AValue: boolean): boolean;
+    procedure SetBool(const AName: string; AValue: boolean);
   end;
 
 implementation
@@ -125,6 +127,33 @@ begin
   for pair in values do
     FSelectors.AddOrSetValue(pair.Key, pair.Value);
 
+  Save;
+end;
+
+function TAppState.GetBool(const AName: string; out AValue: boolean): boolean;
+var
+  value: TJSONValue;
+begin
+  AValue := false;
+  result := false;
+
+  value := FRoot.GetValue(AName);
+  if (value <> nil) and (value is TJSONBool) then
+  begin
+    AValue := TJSONBool(value).AsBoolean;
+    result := true;
+  end;
+end;
+
+procedure TAppState.SetBool(const AName: string; AValue: boolean);
+var
+  existing: TJSONPair;
+begin
+  existing := FRoot.RemovePair(AName);
+  if existing <> nil then
+    existing.Free;
+
+  FRoot.AddPair(AName, TJSONBool.Create(AValue));
   Save;
 end;
 

@@ -45,6 +45,15 @@ begin
       raise Exception.Create('Another instance of this application is already running.');
 
     Drover := TDrover.Create(flags);
+
+    if Drover.NeedsElevation then
+    begin
+      if LaunchSelf(FlagsToCmdLine([afTun, afRestart]), 0) then
+      begin
+        FreeAndNil(Drover);
+        exit;
+      end;
+    end;
   except
     on E: Exception do
     begin

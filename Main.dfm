@@ -1,4 +1,4 @@
-object frmMain: TfrmMain
+﻿object frmMain: TfrmMain
   Left = 0
   Top = 0
   Caption = 'sing-box-drover'
@@ -17,35 +17,41 @@ object frmMain: TfrmMain
     Left = 248
     Top = 40
     object miExtras: TMenuItem
-      Caption = 'Extras'
+      Caption = '更多'
       object miRestart: TMenuItem
-        Caption = 'Restart'
+        Caption = '重启'
         OnClick = miRestartClick
       end
       object miAutostart: TMenuItem
-        Caption = 'Autostart'
+        Caption = '开机自启'
         Enabled = False
         OnClick = miAutostartClick
       end
       object miHomepage: TMenuItem
-        Caption = 'GitHub'
+        Caption = '项目主页'
         OnClick = miHomepageClick
       end
     end
+    object miNodes: TMenuItem
+      Caption = '节点'
+      Visible = False
+    end
     object miTun: TMenuItem
-      Caption = 'TUN mode'
+      Caption = 'TUN 模式'
       Visible = False
       OnClick = miTunClick
     end
     object miSystemProxy: TMenuItem
-      Caption = 'System proxy'
+      Caption = '系统代理'
       OnClick = miSystemProxyClick
     end
-    object miBeforeSelectors: TMenuItem
-      Caption = '-'
+    object miDashboard: TMenuItem
+      Caption = '面板'
+      Visible = False
+      OnClick = miDashboardClick
     end
     object miQuit: TMenuItem
-      Caption = 'Quit'
+      Caption = '退出'
       OnClick = miQuitClick
     end
   end

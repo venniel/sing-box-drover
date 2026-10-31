@@ -12,6 +12,8 @@ uses
 const
   WM_DROVER_CAN_CLOSE = WM_APP + 501;
   STATE_FILENAME = 'sing-box-drover.state.json';
+  STATE_KEY_TUN = 'tun';
+  STATE_KEY_SYSTEM_PROXY = 'system-proxy';
 
 type
   TDroverEventKind = (dekError, dekRunning, dekCoreEvent);
@@ -40,6 +42,7 @@ type
     FPendingEvents: TList<TDroverEvent>;
     FIsElevated: boolean;
     FIsTunActive: boolean;
+    FWantsTun: boolean;
     FSelectors: TConfigSelectors;
     FAppState: TAppState;
 
@@ -71,6 +74,10 @@ type
     procedure ResetSelectors;
     procedure PersistSelectors;
     procedure PersistRuntimeState;
+    function NeedsElevation: boolean;
+    function StoredSystemProxy(out AValue: boolean): boolean;
+    procedure StoreSystemProxy(AValue: boolean);
+    procedure StoreTun(AValue: boolean);
     function EditSelector(selectorIdx, outboundIdx: integer; requestId: NativeInt): boolean;
     function EnableSystemProxy: boolean;
     function DisableSystemProxy: boolean;
@@ -82,6 +89,7 @@ type
     property OnEvent: TDroverEventHandler read FOnEvent write SetOnEvent;
     property NotifyHandle: HWND read FNotifyHandle write FNotifyHandle;
     property IsTunActive: boolean read FIsTunActive;
+    property WantsTun: boolean read FWantsTun;
     property Selectors: TConfigSelectors read FSelectors;
   end;
 
@@ -109,6 +117,15 @@ begin
   if (afRestart in AFlags) or FOptions.selectorPersist then
     ApplyPersistedSelectors;
 
+  if not FAppState.GetBool(STATE_KEY_TUN, FWantsTun) then
+  begin
+    FWantsTun := sbConfig.hasTunInbound and (FOptions.tunStartMode = tsmOn);
+    StoreTun(FWantsTun);
+  end;
+
+  if afTun in AFlags then
+    FWantsTun := true;
+
   FIsElevated := AppElevation.IsProcessElevated;
 
   corePath := FOptions.sbDir + 'sing-box.exe';
@@ -120,7 +137,7 @@ begin
   FSupervisor := TCoreSupervisor.Create(corePath, FLogger, sbConfig.clashApi);
   FSupervisor.OnEvent := HandleCoreEvent;
   FSupervisor.OnTerminate := HandleWorkerTerminated;
-  StartCore(CanUseTun and ((FOptions.tunStartMode = tsmOn) or (afTun in AFlags)));
+  StartCore(CanUseTun and FWantsTun);
 
   if configSource.isBpf and configSource.bpfProfile.isRemote and configSource.bpfProfile.autoUpdate then
   begin
@@ -376,6 +393,38 @@ end;
 procedure TDrover.PersistRuntimeState;
 begin
   PersistSelectors;
+end;
+
+function TDrover.NeedsElevation: boolean;
+begin
+  result := FWantsTun and sbConfig.hasTunInbound and (not FIsElevated);
+end;
+
+function TDrover.StoredSystemProxy(out AValue: boolean): boolean;
+begin
+  result := FAppState.GetBool(STATE_KEY_SYSTEM_PROXY, AValue);
+end;
+
+procedure TDrover.StoreSystemProxy(AValue: boolean);
+begin
+  try
+    FAppState.SetBool(STATE_KEY_SYSTEM_PROXY, AValue);
+  except
+    on E: Exception do
+      Log(trim('Failed to persist system proxy state. ' + E.Message));
+  end;
+end;
+
+procedure TDrover.StoreTun(AValue: boolean);
+begin
+  FWantsTun := AValue;
+
+  try
+    FAppState.SetBool(STATE_KEY_TUN, AValue);
+  except
+    on E: Exception do
+      Log(trim('Failed to persist TUN state. ' + E.Message));
+  end;
 end;
 
 function TDrover.EditSelector(selectorIdx, outboundIdx: integer; requestId: NativeInt): boolean;

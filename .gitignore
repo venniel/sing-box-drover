@@ -61,6 +61,7 @@ Win64/
 *.cfg
 *.hpp
 *Resource.rc
+*.err
 
 # Delphi local files (user-specific info)
 *.local
@@ -81,3 +82,10 @@ __recovery/
 modules/
 
 .idea/
+
+# Local test inputs and runtime artifacts
+/haita.json
+/sing-box-drover.state.json
+/cache.db
+/ui/
+*.log

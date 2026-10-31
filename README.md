@@ -155,13 +155,21 @@ Parameters:
 - `sb-config-file` — sing-box config file (JSON or `.bpf`).  
   You can specify just a file name or an absolute path.
 
-- `tun-start-mode` — whether to enable TUN mode on program start (requires a `tun` inbound in your sing-box config):
+- `tun-start-mode` — TUN state for the first launch (requires a `tun` inbound in your sing-box config):
     - `off` — start without TUN; you can enable it later from the tray menu.
     - `on` — enable TUN immediately on start.
 
-- `system-proxy-auto` — automatic system proxy management:
-    - `1` — enable on start, disable on exit.
-    - `0` — manual toggling only.
+  After the first run the last TUN state is remembered in `sing-box-drover.state.json` (next to the executable)
+  and restored on later launches, including requesting elevation when TUN was left enabled.
+
+- `system-proxy-auto` — system proxy state for the first launch:
+    - `1` — start with the system proxy enabled.
+    - `0` — start without it.
+
+  After the first run the last system proxy state is remembered in `sing-box-drover.state.json` and restored on
+  later launches. The system proxy is disabled when the program exits and re-enabled on the next launch if it was on.
+
+  Delete `sing-box-drover.state.json` to fall back to these initial values again.
 
 - `selector-menu-layout` — layout of selectors in the tray menu:
     - `auto` — picks `nested` when there are many items, otherwise `flat`.

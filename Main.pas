@@ -13,14 +13,15 @@ type
 
   TfrmMain = class(TForm)
     PopupMenu: TPopupMenu;
-    miQuit: TMenuItem;
-    miSystemProxy: TMenuItem;
-    miBeforeSelectors: TMenuItem;
-    miTun: TMenuItem;
     miExtras: TMenuItem;
-    miAutostart: TMenuItem;
     miRestart: TMenuItem;
+    miAutostart: TMenuItem;
     miHomepage: TMenuItem;
+    miNodes: TMenuItem;
+    miTun: TMenuItem;
+    miSystemProxy: TMenuItem;
+    miDashboard: TMenuItem;
+    miQuit: TMenuItem;
     procedure FormCloseQuery(Sender: TObject; var CanClose: boolean);
     procedure miQuitClick(Sender: TObject);
     procedure miSystemProxyClick(Sender: TObject);
@@ -32,6 +33,7 @@ type
     procedure miAutostartClick(Sender: TObject);
     procedure miRestartClick(Sender: TObject);
     procedure miHomepageClick(Sender: TObject);
+    procedure miDashboardClick(Sender: TObject);
   private
     TrayIcon: TElevatedTrayIcon;
     FDrover: TDrover;
@@ -43,7 +45,7 @@ type
 
     function NewRequestId: NativeInt;
     procedure UpdateTrayIcon;
-    procedure ToggleSystemProxy(AEnable: boolean; AUpdateTrayIcon: boolean = true);
+    procedure ToggleSystemProxy(AEnable: boolean; AUpdateTrayIcon: boolean = true; APersist: boolean = true);
     procedure ToggleTunDisplay(AActive: boolean; AUpdateTrayIcon: boolean = true);
     procedure ToggleTun(AEnable: boolean);
     procedure HandleDroverEvent(event: TDroverEvent);
@@ -180,6 +182,17 @@ begin
   ShellExecute(0, 'open', 'https://github.com/hdrover/sing-box-drover', nil, nil, SW_SHOWNORMAL);
 end;
 
+procedure TfrmMain.miDashboardClick(Sender: TObject);
+var
+  url: string;
+begin
+  url := FDrover.sbConfig.clashApi.DashboardUrl;
+  if url = '' then
+    exit;
+
+  ShellExecute(0, 'open', PChar(url), nil, nil, SW_SHOWNORMAL);
+end;
+
 procedure TfrmMain.miRestartClick(Sender: TObject);
 var
   flags: TAppFlags;
@@ -197,17 +210,26 @@ begin
 end;
 
 procedure TfrmMain.InitDrover(ADrover: TDrover);
+var
+  systemProxyEnabled: boolean;
 begin
   FDrover := ADrover;
   FDrover.NotifyHandle := Handle;
 
   DrawSelectors;
 
+  miDashboard.Visible := FDrover.sbConfig.clashApi.DashboardUrl <> '';
   miTun.Visible := FDrover.sbConfig.hasTunInbound;
   ToggleTunDisplay(FDrover.IsTunActive, false);
 
-  if FDrover.Options.systemProxyAuto then
-    ToggleSystemProxy(true, false);
+  if not FDrover.StoredSystemProxy(systemProxyEnabled) then
+  begin
+    systemProxyEnabled := FDrover.Options.systemProxyAuto;
+    FDrover.StoreSystemProxy(systemProxyEnabled);
+  end;
+
+  if systemProxyEnabled then
+    ToggleSystemProxy(true, false, false);
 
   UpdateTrayIcon;
 
@@ -265,15 +287,17 @@ var
   selectors: TConfigSelectors;
   selector: TConfigSelector;
   outboundName: string;
-  popupItems, selectorItem, outboundItem: TMenuItem;
-  insertIndex, selectorCount, selectorI, outboundI: integer;
+  selectorItem, outboundItem: TMenuItem;
+  selectorCount, selectorI, outboundI: integer;
   flatRows: integer;
   isNested: boolean;
   itemOwner: TComponent;
 begin
   selectors := FDrover.selectors;
   selectorCount := Length(selectors);
-  if (selectorCount < 1) or (selectorCount > 50) then
+
+  miNodes.Visible := (selectorCount >= 1) and (selectorCount <= 50);
+  if not miNodes.Visible then
     exit;
 
   case FDrover.Options.selectorMenuLayout of
@@ -288,30 +312,23 @@ begin
     isNested := flatRows > AUTO_FLAT_ROWS_THRESHOLD;
   end;
 
-  popupItems := PopupMenu.Items;
-  insertIndex := popupItems.IndexOf(miBeforeSelectors) + 1;
-  selectorItem := nil;
-
   for selectorI := Low(selectors) to High(selectors) do
   begin
     selector := selectors[selectorI];
 
-    selectorItem := TMenuItem.Create(popupItems);
+    selectorItem := TMenuItem.Create(miNodes);
     selectorItem.Caption := selector.name;
 
-    if not isNested then
-    begin
-      selectorItem.Enabled := false;
-      popupItems.Insert(insertIndex, selectorItem);
-      inc(insertIndex);
-    end;
-
-    outboundItem := nil;
     if isNested then
       itemOwner := selectorItem
     else
-      itemOwner := popupItems;
+    begin
+      selectorItem.Enabled := false;
+      itemOwner := miNodes;
+      miNodes.Add(selectorItem);
+    end;
 
+    outboundItem := nil;
     for outboundI := Low(selector.outbounds) to High(selector.outbounds) do
     begin
       outboundName := selector.outbounds[outboundI];
@@ -326,32 +343,15 @@ begin
       outboundItem.GroupIndex := selectorI + 10;
 
       if isNested then
-      begin
-        selectorItem.Add(outboundItem);
-      end
+        selectorItem.Add(outboundItem)
       else
-      begin
-        popupItems.Insert(insertIndex, outboundItem);
-        inc(insertIndex);
-      end;
-    end;
-
-    if (not isNested) and Assigned(outboundItem) then
-    begin
-      popupItems.InsertNewLineAfter(outboundItem);
-      inc(insertIndex);
+        miNodes.Add(outboundItem);
     end;
 
     if isNested then
-    begin
-      popupItems.Insert(insertIndex, selectorItem);
-      inc(insertIndex);
-    end;
-  end;
-
-  if isNested then
-  begin
-    popupItems.InsertNewLineAfter(selectorItem);
+      miNodes.Add(selectorItem)
+    else if Assigned(outboundItem) and (selectorI < High(selectors)) then
+      miNodes.InsertNewLineAfter(outboundItem);
   end;
 end;
 
@@ -375,7 +375,7 @@ begin
   TrayIcon.Icon := TrayIcon.Icon;
 end;
 
-procedure TfrmMain.ToggleSystemProxy(AEnable: boolean; AUpdateTrayIcon: boolean = true);
+procedure TfrmMain.ToggleSystemProxy(AEnable: boolean; AUpdateTrayIcon: boolean = true; APersist: boolean = true);
 begin
   if AEnable and FClosePending then
     exit;
@@ -387,6 +387,9 @@ begin
     FDrover.EnableSystemProxy
   else
     FDrover.DisableSystemProxy;
+
+  if APersist then
+    FDrover.StoreSystemProxy(AEnable);
 
   if AUpdateTrayIcon then
     UpdateTrayIcon;
@@ -408,6 +411,7 @@ begin
 
   if not IsProcessElevated then
   begin
+    FDrover.StoreTun(AEnable);
     FDrover.PersistRuntimeState;
     if LaunchSelf(FlagsToCmdLine([afTun, afRestart]), Handle) then
       Close;
@@ -416,7 +420,8 @@ begin
 
   ToggleTunDisplay(AEnable);
   miTun.Enabled := false;
-  FDrover.StartCore(miTun.Checked);
+  FDrover.StoreTun(AEnable);
+  FDrover.StartCore(AEnable);
 end;
 
 procedure TfrmMain.FormCloseQuery(Sender: TObject; var CanClose: boolean);
@@ -432,8 +437,8 @@ begin
 
   ToggleTunDisplay(false, false);
 
-  if FDrover.Options.systemProxyAuto then
-    ToggleSystemProxy(false, false);
+  if FIsSystemProxyActive then
+    ToggleSystemProxy(false, false, false);
 
   UpdateTrayIcon;
 

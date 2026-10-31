@@ -208,10 +208,12 @@ begin
     end;
 
     result.clashApi.externalController := '';
+    result.clashApi.externalUi := '';
     result.clashApi.secret := '';
     if rootObj.TryGetValue('experimental.clash_api', obj) then
     begin
       obj.TryGetValue('external_controller', result.clashApi.externalController);
+      obj.TryGetValue('external_ui', result.clashApi.externalUi);
       obj.TryGetValue('secret', result.clashApi.secret);
     end
     else if Length(result.Selectors) > 0 then
