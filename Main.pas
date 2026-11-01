@@ -50,6 +50,7 @@ type
     procedure ToggleTun(AEnable: boolean);
     procedure HandleDroverEvent(event: TDroverEvent);
     procedure WMDroverCanClose(var msg: TMessage); message WM_DROVER_CAN_CLOSE;
+    procedure WMEndSession(var msg: TMessage); message WM_ENDSESSION;
     procedure WMAutostartResult(var msg: TMessage); message WM_AUTOSTART_RESULT;
     procedure ShowBalloon(AText, ATitle: string; AFlags: TBalloonFlags = bfInfo; ATimeout: integer = 10000);
     procedure ShowOnlyExitInTray;
@@ -452,6 +453,25 @@ begin
 
   EndMenu;
   PostMessage(Handle, WM_CLOSE, 0, 0);
+end;
+
+procedure TfrmMain.WMEndSession(var msg: TMessage);
+begin
+  if msg.WParam = 0 then
+    exit;
+
+  FClosePending := true;
+  ShowOnlyExitInTray;
+
+  ToggleTunDisplay(false, false);
+
+  if FIsSystemProxyActive then
+    ToggleSystemProxy(false, false, false);
+
+  if Assigned(FDrover) then
+    FDrover.StopForShutdown;
+
+  UpdateTrayIcon;
 end;
 
 procedure TfrmMain.miQuitClick(Sender: TObject);

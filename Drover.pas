@@ -7,7 +7,7 @@ uses
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.Menus, SystemProxy,
   System.JSON, System.IOUtils, System.Generics.Collections, Options,
   CoreSupervisor, Logger, AppElevation, AppArgs, SingBoxConfig, SingBoxCli,
-  ConfigReader, ConfigUpdater, AppState;
+  ConfigReader, ConfigUpdater, AppState, TunCleanup;
 
 const
   WM_DROVER_CAN_CLOSE = WM_APP + 501;
@@ -82,6 +82,7 @@ type
     function EnableSystemProxy: boolean;
     function DisableSystemProxy: boolean;
     function Shutdown: boolean;
+    procedure StopForShutdown;
     procedure StartCore(useTun: boolean);
     function CanUseTun: boolean;
 
@@ -164,11 +165,24 @@ end;
 procedure TDrover.StartCore(useTun: boolean);
 var
   configJson: string;
+  removedAdapters: integer;
 begin
   if not CanUseTun then
     useTun := false;
 
   FIsTunActive := useTun;
+
+  if useTun then
+  begin
+    try
+      removedAdapters := TunCleanup.RemoveStaleWintunAdapters;
+      if removedAdapters > 0 then
+        Log(format('Removed %d stale Wintun adapter(s).', [removedAdapters]));
+    except
+      on E: Exception do
+        Log('Failed to clean stale Wintun adapters. ' + E.Message);
+    end;
+  end;
 
   if useTun then
     configJson := sbConfig.jsonWithTun
@@ -473,6 +487,40 @@ begin
 
   TryCompleteShutdown;
   result := FShutdownCompleted;
+end;
+
+procedure TDrover.StopForShutdown;
+begin
+  if FShutdownCompleted then
+    exit;
+
+  FShutdownRequested := true;
+
+  if Assigned(FConfigUpdater) then
+  begin
+    FConfigUpdater.OnTerminate := nil;
+    if not FConfigUpdater.Finished then
+      FConfigUpdater.Terminate;
+  end;
+
+  if Assigned(FSupervisor) then
+  begin
+    FSupervisor.OnEvent := nil;
+    FSupervisor.OnTerminate := nil;
+    if not FSupervisor.Finished then
+      FSupervisor.Terminate;
+  end;
+
+  if Assigned(FConfigUpdater) and (not FConfigUpdater.Finished) then
+    FConfigUpdater.WaitFor;
+
+  if Assigned(FSupervisor) and (not FSupervisor.Finished) then
+    FSupervisor.WaitFor;
+
+  FShutdownCompleted := true;
+
+  if Assigned(FLogger) then
+    FLogger.Close;
 end;
 
 procedure TDrover.TryCompleteShutdown;
