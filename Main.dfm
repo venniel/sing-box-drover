@@ -32,6 +32,10 @@
         OnClick = miHomepageClick
       end
     end
+    object miModes: TMenuItem
+      Caption = '模式'
+      Visible = False
+    end
     object miNodes: TMenuItem
       Caption = '节点'
       Visible = False

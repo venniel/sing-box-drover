@@ -4,7 +4,7 @@ interface
 
 uses
   Winapi.Windows, System.SysUtils, System.Classes, System.IOUtils,
-  System.Generics.Collections, System.SyncObjs, Logger, SingBoxConfig,
+  System.Generics.Collections, System.SyncObjs, System.JSON, Logger, SingBoxConfig,
   CoreApiClient;
 
 type
@@ -16,22 +16,25 @@ type
 
   TCoreState = (csStopped, csStarting, csRunning, csStopping, csFailed);
 
-  TCoreEventKind = (cekState, cekError, cekApiReady, cekSelectorDone);
+  TCoreEventKind = (cekState, cekError, cekApiReady, cekConfigModes, cekSelectorDone, cekModeDone);
 
   TCoreEvent = record
     kind: TCoreEventKind;
     state: TCoreState;
     msg: string;
     requestId: NativeInt;
+    mode: string;
+    modes: TArray<string>;
   end;
 
-  TCoreCommandKind = (cmdNone, cmdStart, cmdStop, cmdSetSelectors);
+  TCoreCommandKind = (cmdNone, cmdStart, cmdStop, cmdSetSelectors, cmdSetMode);
 
   TCoreCommand = record
     kind: TCoreCommandKind;
     configJson: string;
     selectorTasks: TSelectorTasks;
     requestId: NativeInt;
+    mode: string;
   end;
 
   TCoreCommandQueue = TThreadedQueue<TCoreCommand>;
@@ -84,6 +87,8 @@ type
     function SendCtrlCToConsole(processId: DWORD): boolean;
     procedure DoStopGraceful;
     procedure DoSetSelectors(tasks: TSelectorTasks; requestId: NativeInt);
+    procedure DoSetMode(const AMode: string);
+    procedure DoQueryConfig;
     procedure CheckProcessStatus;
     procedure InitApiCheck;
     procedure CheckApiStatus;
@@ -102,6 +107,7 @@ type
     procedure RequestStart(configJson: string);
     procedure RequestStop;
     function RequestSetSelectors(tasks: TSelectorTasks; requestId: NativeInt): boolean;
+    function RequestSetMode(const AMode: string): boolean;
 
     property OnEvent: TCoreEventHandler read FOnEvent write FOnEvent;
     property state: TCoreState read FState;
@@ -111,7 +117,7 @@ implementation
 
 const
   STATE_NAMES: array [TCoreState] of string = ('Stopped', 'Starting', 'Running', 'Stopping', 'Failed');
-  COMMAND_NAMES: array [TCoreCommandKind] of string = ('None', 'Start', 'Stop', 'SetSelectors');
+  COMMAND_NAMES: array [TCoreCommandKind] of string = ('None', 'Start', 'Stop', 'SetSelectors', 'SetMode');
   MAX_CAPTURE_BYTES = 8 * 1024;
   READ_CHUNK_BYTES = 4 * 1024;
   READER_DRAIN_TIMEOUT_MS = 5000;
@@ -489,6 +495,7 @@ procedure TCoreSupervisor.RequestStart(configJson: string);
 var
   cmd: TCoreCommand;
 begin
+  cmd := Default (TCoreCommand);
   cmd.kind := cmdStart;
   cmd.configJson := configJson;
   FQueue.PushItem(cmd);
@@ -498,6 +505,7 @@ procedure TCoreSupervisor.RequestStop;
 var
   cmd: TCoreCommand;
 begin
+  cmd := Default (TCoreCommand);
   cmd.kind := cmdStop;
   FQueue.PushItem(cmd);
 end;
@@ -506,9 +514,20 @@ function TCoreSupervisor.RequestSetSelectors(tasks: TSelectorTasks; requestId: N
 var
   cmd: TCoreCommand;
 begin
+  cmd := Default (TCoreCommand);
   cmd.kind := cmdSetSelectors;
   cmd.selectorTasks := tasks;
   cmd.requestId := requestId;
+  result := FQueue.PushItem(cmd) = wrSignaled;
+end;
+
+function TCoreSupervisor.RequestSetMode(const AMode: string): boolean;
+var
+  cmd: TCoreCommand;
+begin
+  cmd := Default (TCoreCommand);
+  cmd.kind := cmdSetMode;
+  cmd.mode := AMode;
   result := FQueue.PushItem(cmd) = wrSignaled;
 end;
 
@@ -523,6 +542,8 @@ begin
       DoStopGraceful;
     cmdSetSelectors:
       DoSetSelectors(cmd.selectorTasks, cmd.requestId);
+    cmdSetMode:
+      DoSetMode(cmd.mode);
   end;
 end;
 
@@ -813,7 +834,89 @@ begin
     event := Default (TCoreEvent);
     event.kind := cekApiReady;
     NotifyEvent(event);
+
+    DoQueryConfig;
   end;
+end;
+
+procedure TCoreSupervisor.DoQueryConfig;
+var
+  text: string;
+  value: TJSONValue;
+  obj: TJSONObject;
+  modesValue: TJSONArray;
+  event: TCoreEvent;
+  modes: TArray<string>;
+  i: integer;
+begin
+  try
+    text := FCoreApiClient.SendClashApiRequest('GET', '/configs', '');
+  except
+    on E: Exception do
+    begin
+      Log(trim('Config query failed. ' + E.Message));
+      exit;
+    end;
+  end;
+
+  value := TJSONObject.ParseJSONValue(text);
+  if not(value is TJSONObject) then
+  begin
+    if value <> nil then
+      value.Free;
+    exit;
+  end;
+
+  obj := TJSONObject(value);
+  try
+    event := Default (TCoreEvent);
+    event.kind := cekConfigModes;
+    obj.TryGetValue('mode', event.mode);
+
+    if obj.TryGetValue('mode-list', modesValue) then
+    begin
+      SetLength(modes, modesValue.Count);
+      for i := 0 to modesValue.Count - 1 do
+        if modesValue.Items[i] is TJSONString then
+          modes[i] := TJSONString(modesValue.Items[i]).Value;
+      event.modes := modes;
+    end;
+
+    Log(trim(format('Clash mode: %s, available modes: %d.', [event.mode, Length(event.modes)])));
+
+    NotifyEvent(event);
+  finally
+    value.Free;
+  end;
+end;
+
+procedure TCoreSupervisor.DoSetMode(const AMode: string);
+var
+  event: TCoreEvent;
+  body: TJSONObject;
+begin
+  event := Default (TCoreEvent);
+
+  try
+    body := TJSONObject.Create;
+    try
+      body.AddPair('mode', AMode);
+      FCoreApiClient.SendClashApiRequest('PATCH', '/configs', body.ToString);
+    finally
+      body.Free;
+    end;
+
+    event.kind := cekModeDone;
+    event.mode := AMode;
+  except
+    on E: Exception do
+    begin
+      event.kind := cekError;
+      event.msg := 'Failed to switch mode. ' + E.Message;
+    end;
+  end;
+
+  NotifyEvent(event);
 end;
 
 procedure TCoreSupervisor.Log(const AMessage: string);

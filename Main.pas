@@ -17,6 +17,7 @@ type
     miRestart: TMenuItem;
     miAutostart: TMenuItem;
     miHomepage: TMenuItem;
+    miModes: TMenuItem;
     miNodes: TMenuItem;
     miTun: TMenuItem;
     miSystemProxy: TMenuItem;
@@ -27,7 +28,9 @@ type
     procedure miSystemProxyClick(Sender: TObject);
     procedure TrayIconClick(Sender: TObject);
     procedure miSelectorClick(Sender: TObject);
+    procedure miModeClick(Sender: TObject);
     procedure DrawSelectors;
+    procedure DrawModes;
     procedure FormCreate(Sender: TObject);
     procedure miTunClick(Sender: TObject);
     procedure miAutostartClick(Sender: TObject);
@@ -218,6 +221,7 @@ begin
   FDrover.NotifyHandle := Handle;
 
   DrawSelectors;
+  DrawModes;
 
   miDashboard.Visible := FDrover.sbConfig.clashApi.DashboardUrl <> '';
   miTun.Visible := FDrover.sbConfig.hasTunInbound;
@@ -246,13 +250,19 @@ var
 begin
   case event.kind of
     dekError:
-      ShowBalloon(event.msg, '', bfError);
+      begin
+        ShowBalloon(event.msg, '', bfError);
+        DrawModes;
+      end;
 
     dekRunning:
       begin
         ToggleTunDisplay(FDrover.IsTunActive);
         miTun.Enabled := true;
       end;
+
+    dekClashModes:
+      DrawModes;
 
     dekCoreEvent:
       begin
@@ -353,6 +363,35 @@ begin
       miNodes.Add(selectorItem)
     else if Assigned(outboundItem) and (selectorI < High(selectors)) then
       miNodes.InsertNewLineAfter(outboundItem);
+  end;
+end;
+
+procedure TfrmMain.DrawModes;
+var
+  modes: TArray<string>;
+  i: integer;
+  item: TMenuItem;
+begin
+  modes := FDrover.ClashModes;
+
+  miModes.Visible := Length(modes) > 0;
+  if not miModes.Visible then
+    exit;
+
+  while miModes.Count > 0 do
+    miModes.Delete(0);
+
+  for i := Low(modes) to High(modes) do
+  begin
+    item := TMenuItem.Create(miModes);
+    item.Caption := modes[i];
+    item.AutoCheck := true;
+    item.RadioItem := true;
+    item.GroupIndex := 100;
+    item.Checked := SameText(modes[i], FDrover.ClashMode);
+    item.OnClick := miModeClick;
+    item.Tag := i;
+    miModes.Add(item);
   end;
 end;
 
@@ -532,6 +571,23 @@ begin
 
   FPendingSelectorRequests.Add(requestId, item);
   item.Enabled := false;
+end;
+
+procedure TfrmMain.miModeClick(Sender: TObject);
+var
+  item: TMenuItem;
+begin
+  if not(Sender is TMenuItem) then
+    exit;
+
+  item := TMenuItem(Sender);
+  if SameText(item.Caption, FDrover.ClashMode) then
+    exit;
+
+  item.Checked := true;
+
+  if not FDrover.SetClashMode(item.Caption) then
+    DrawModes;
 end;
 
 procedure TfrmMain.ShowOnlyExitInTray;

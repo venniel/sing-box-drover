@@ -16,7 +16,7 @@ const
   STATE_KEY_SYSTEM_PROXY = 'system-proxy';
 
 type
-  TDroverEventKind = (dekError, dekRunning, dekCoreEvent);
+  TDroverEventKind = (dekError, dekRunning, dekCoreEvent, dekClashModes);
 
   TDroverEvent = record
     kind: TDroverEventKind;
@@ -43,6 +43,8 @@ type
     FIsElevated: boolean;
     FIsTunActive: boolean;
     FWantsTun: boolean;
+    FClashMode: string;
+    FClashModes: TArray<string>;
     FSelectors: TConfigSelectors;
     FAppState: TAppState;
 
@@ -79,6 +81,7 @@ type
     procedure StoreSystemProxy(AValue: boolean);
     procedure StoreTun(AValue: boolean);
     function EditSelector(selectorIdx, outboundIdx: integer; requestId: NativeInt): boolean;
+    function SetClashMode(const AMode: string): boolean;
     function EnableSystemProxy: boolean;
     function DisableSystemProxy: boolean;
     function Shutdown: boolean;
@@ -91,6 +94,8 @@ type
     property NotifyHandle: HWND read FNotifyHandle write FNotifyHandle;
     property IsTunActive: boolean read FIsTunActive;
     property WantsTun: boolean read FWantsTun;
+    property ClashMode: string read FClashMode;
+    property ClashModes: TArray<string> read FClashModes;
     property Selectors: TConfigSelectors read FSelectors;
   end;
 
@@ -300,6 +305,14 @@ begin
     cekApiReady:
       ResetSelectors;
 
+    cekConfigModes, cekModeDone:
+      begin
+        FClashMode := event.mode;
+        if Length(event.modes) > 0 then
+          FClashModes := event.modes;
+        NotifyEvent(dekClashModes, '');
+      end;
+
     cekSelectorDone:
       ForwardCoreEvent(event);
   end;
@@ -462,6 +475,11 @@ begin
   task.value := selector.outbounds[outboundIdx];
 
   result := FSupervisor.RequestSetSelectors([task], requestId);
+end;
+
+function TDrover.SetClashMode(const AMode: string): boolean;
+begin
+  result := FSupervisor.RequestSetMode(AMode);
 end;
 
 function TDrover.EnableSystemProxy: boolean;

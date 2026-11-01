@@ -20,7 +20,7 @@ type
 
     function IsConfigured: boolean;
     function CheckReady: boolean;
-    procedure SendClashApiRequest(method, path, data: string; timeoutMs: integer = 1000);
+    function SendClashApiRequest(method, path, data: string; timeoutMs: integer = 1000): string;
   end;
 
 implementation
@@ -66,7 +66,7 @@ begin
   end;
 end;
 
-procedure TCoreApiClient.SendClashApiRequest(method, path, data: string; timeoutMs: integer);
+function TCoreApiClient.SendClashApiRequest(method, path, data: string; timeoutMs: integer): string;
 var
   client: THTTPClient;
   body: TStringStream;
@@ -77,6 +77,8 @@ var
   elapsedMs: UInt64;
   requestInfo: string;
 begin
+  result := '';
+
   if not IsConfigured then
     raise Exception.Create('Clash API is not configured.');
 
@@ -106,6 +108,10 @@ begin
       begin
         response := client.Put(url, body, nil, headers);
       end
+      else if SameText(method, 'PATCH') then
+      begin
+        response := client.Patch(url, body, nil, headers);
+      end
       else if SameText(method, 'DELETE') then
       begin
         response := client.Delete(url, nil, headers);
@@ -117,6 +123,8 @@ begin
 
       if response.StatusCode div 100 <> 2 then
         raise Exception.CreateFmt('HTTP %d.', [response.StatusCode]);
+
+      result := response.ContentAsString(TEncoding.UTF8);
     except
       on E: Exception do
       begin
