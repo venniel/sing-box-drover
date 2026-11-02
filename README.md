@@ -38,7 +38,6 @@ top.
 ## Not implemented
 
 - No profile/config switching: only one sing-box config file is used (path is set in the program config).
-- No Clash Mode switcher.
 
 ## Installation
 
@@ -141,7 +140,7 @@ The program uses a simple INI-style config file included in the archive. The def
 sb-dir =
 sb-config-file = config.json
 tun-start-mode = off
-system-proxy-auto = 1
+system-proxy-auto = 0
 ; Selector menu layout: "auto", "flat" or "nested"
 selector-menu-layout = auto
 selector-persist = 1
@@ -202,3 +201,21 @@ name, type, JSON config, and (for remote profiles) the URL, auto-update flag, up
 The easiest way to obtain a `.bpf` file is to export a profile from an official sing-box client.
 To create one from scratch or edit an existing profile in the browser, use
 [sing-box-bpf-editor](https://hdrover.github.io/sing-box-bpf-editor/) — it runs fully client-side.
+
+## Building from source
+
+The program is written in Go and targets Windows. Requirements:
+
+- Go 1.26 or newer
+- The `golang.org/x/sys` module (resolved automatically by `go mod download`)
+
+Build from the repository root:
+
+```sh
+go build -ldflags "-H=windowsgui" -trimpath -o sing-box-drover.exe .
+```
+
+The `-H=windowsgui` flag suppresses the console window. Run the tests with `go test .`.
+
+The UI is built directly on Win32 (no GUI toolkit), so the resulting executable has no runtime dependencies beyond
+the standard Windows DLLs.
