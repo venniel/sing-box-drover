@@ -89,3 +89,7 @@ modules/
 /cache.db
 /ui/
 *.log
+
+# Go build outputs
+/bin/
+/obj/
