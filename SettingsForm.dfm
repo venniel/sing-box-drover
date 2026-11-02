@@ -18,40 +18,17 @@
   TextHeight = 15
   object lblCoreDir: TLabel
     Left = 12
-    Top = 15
+    Top = 14
     Width = 103
-    Height = 15
+    Height = 19
     Caption = 'sing-box 核心目录'
   end
-  object lblConfig: TLabel
-    Left = 12
-    Top = 68
-    Width = 52
-    Height = 15
-    Caption = '配置文件'
-  end
-  object lblLayout: TLabel
-    Left = 12
-    Top = 121
-    Width = 78
-    Height = 15
-    Caption = '节点菜单样式'
-  end
-  object lblError: TLabel
-    Left = 12
-    Top = 172
-    Width = 476
-    Height = 32
-    AutoSize = False
-    Caption = ''
-    Visible = False
-    WordWrap = True
-  end
-  object edCoreDir: TEdit
+  object edCoreDir: TAccessibleEdit
     Left = 12
     Top = 35
     Width = 385
     Height = 23
+    AccessibleName = 'sing-box 核心目录'
     TabOrder = 0
   end
   object btnBrowseCore: TButton
@@ -62,11 +39,19 @@
     Caption = '浏览...'
     TabOrder = 1
   end
-  object edConfig: TEdit
+  object lblConfig: TLabel
+    Left = 12
+    Top = 67
+    Width = 52
+    Height = 19
+    Caption = '配置文件'
+  end
+  object edConfig: TAccessibleEdit
     Left = 12
     Top = 88
     Width = 385
     Height = 23
+    AccessibleName = '配置文件'
     TabOrder = 2
   end
   object btnBrowseConfig: TButton
@@ -77,13 +62,31 @@
     Caption = '浏览...'
     TabOrder = 3
   end
-  object cbLayout: TComboBox
+  object lblLayout: TLabel
+    Left = 12
+    Top = 120
+    Width = 78
+    Height = 19
+    Caption = '节点菜单样式'
+  end
+  object cbLayout: TAccessibleCombo
     Left = 12
     Top = 141
     Width = 160
     Height = 23
     Style = csDropDownList
+    AccessibleName = '节点菜单样式'
     TabOrder = 4
+  end
+  object lblError: TLabel
+    Left = 12
+    Top = 172
+    Width = 476
+    Height = 32
+    AutoSize = False
+    Caption = ''
+    Visible = False
+    WordWrap = True
   end
   object btnSave: TButton
     Left = 316

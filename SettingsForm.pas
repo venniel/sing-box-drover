@@ -3,20 +3,84 @@
 interface
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.UITypes,
+  Winapi.Windows, Winapi.Messages, Winapi.OleAcc, System.SysUtils, System.Classes,
+  System.Variants, System.Win.ComObj, System.UITypes,
   System.IOUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls,
   Vcl.FileCtrl, Options;
 
 type
+  // VCL controls expose no accessible name, and OLEACC only borrows a
+  // sibling STATIC's text when the control uses a native Win32 window
+  // class. Answer WM_GETOBJECT ourselves and report the label text as the
+  // control's accessible name.
+  TControlAccessible = class(TInterfacedObject, IAccessible)
+  private
+    FDefault: IAccessible;
+    FName: string;
+  public
+    constructor Create(const ADefault: IAccessible; const AName: string);
+    function Get_accParent(out ppdispParent: IDispatch): HResult; stdcall;
+    function Get_accChildCount(out pcountChildren: Integer): HResult; stdcall;
+    function Get_accChild(varChild: OleVariant; out ppdispChild: IDispatch): HResult; stdcall;
+    function Get_accName(varChild: OleVariant; out pszName: WideString): HResult; stdcall;
+    function Get_accValue(varChild: OleVariant; out pszValue: WideString): HResult; stdcall;
+    function Get_accDescription(varChild: OleVariant; out pszDescription: WideString): HResult; stdcall;
+    function Get_accRole(varChild: OleVariant; out pvarRole: OleVariant): HResult; stdcall;
+    function Get_accState(varChild: OleVariant; out pvarState: OleVariant): HResult; stdcall;
+    function Get_accHelp(varChild: OleVariant; out pszHelp: WideString): HResult; stdcall;
+    function Get_accHelpTopic(out pszHelpFile: WideString; varChild: OleVariant;
+      out pidTopic: Integer): HResult; stdcall;
+    function Get_accKeyboardShortcut(varChild: OleVariant; out pszKeyboardShortcut: WideString): HResult; stdcall;
+    function Get_accFocus(out pvarChild: OleVariant): HResult; stdcall;
+    function Get_accSelection(out pvarChildren: OleVariant): HResult; stdcall;
+    function Get_accDefaultAction(varChild: OleVariant; out pszDefaultAction: WideString): HResult; stdcall;
+    function accSelect(flagsSelect: Integer; varChild: OleVariant): HResult; stdcall;
+    function accLocation(out pxLeft: Integer; out pyTop: Integer; out pcxWidth: Integer;
+      out pcyHeight: Integer; varChild: OleVariant): HResult; stdcall;
+    function accNavigate(navDir: Integer; varStart: OleVariant; out pvarEndUpAt: OleVariant): HResult; stdcall;
+    function accHitTest(xLeft: Integer; yTop: Integer; out pvarChild: OleVariant): HResult; stdcall;
+    function accDoDefaultAction(varChild: OleVariant): HResult; stdcall;
+    function Set_accName(varChild: OleVariant; const pszName: WideString): HResult; stdcall;
+    function Set_accValue(varChild: OleVariant; const pszValue: WideString): HResult; stdcall;
+    function GetTypeInfoCount(out Count: Integer): HResult; stdcall;
+    function GetTypeInfo(Index, LocaleID: Integer; out TypeInfo): HResult; stdcall;
+    function GetIDsOfNames(const IID: TGUID; Names: Pointer; NameCount, LocaleID: Integer;
+      DispIDs: Pointer): HResult; stdcall;
+    function Invoke(DispID: Integer; const IID: TGUID; LocaleID: Integer; Flags: Word;
+      var Params; VarResult, ExcepInfo, ArgErr: Pointer): HResult; stdcall;
+  end;
+
+  TAccessibleEdit = class(TEdit)
+  private
+    FAccessible: IAccessible;
+    FAccessibleName: string;
+  protected
+    procedure WndProc(var Message: TMessage); override;
+    procedure DestroyWnd; override;
+  published
+    property AccessibleName: string read FAccessibleName write FAccessibleName;
+  end;
+
+  TAccessibleCombo = class(TComboBox)
+  private
+    FAccessible: IAccessible;
+    FAccessibleName: string;
+  protected
+    procedure WndProc(var Message: TMessage); override;
+    procedure DestroyWnd; override;
+  published
+    property AccessibleName: string read FAccessibleName write FAccessibleName;
+  end;
+
   TfrmSettings = class(TForm)
     lblCoreDir: TLabel;
-    edCoreDir: TEdit;
+    edCoreDir: TAccessibleEdit;
     btnBrowseCore: TButton;
     lblConfig: TLabel;
-    edConfig: TEdit;
+    edConfig: TAccessibleEdit;
     btnBrowseConfig: TButton;
     lblLayout: TLabel;
-    cbLayout: TComboBox;
+    cbLayout: TAccessibleCombo;
     lblError: TLabel;
     btnSave: TButton;
     btnCancel: TButton;
@@ -52,6 +116,221 @@ var
 implementation
 
 {$R *.dfm}
+
+function IsSelfChild(const varChild: OleVariant): Boolean;
+begin
+  if VarIsNull(varChild) or VarIsEmpty(varChild) then
+    exit(true);
+
+  try
+    result := Integer(varChild) = CHILDID_SELF;
+  except
+    result := false;
+  end;
+end;
+
+constructor TControlAccessible.Create(const ADefault: IAccessible; const AName: string);
+begin
+  inherited Create;
+  FDefault := ADefault;
+  FName := AName;
+end;
+
+function TControlAccessible.Get_accParent(out ppdispParent: IDispatch): HResult;
+begin
+  result := FDefault.Get_accParent(ppdispParent);
+end;
+
+function TControlAccessible.Get_accChildCount(out pcountChildren: Integer): HResult;
+begin
+  result := FDefault.Get_accChildCount(pcountChildren);
+end;
+
+function TControlAccessible.Get_accChild(varChild: OleVariant; out ppdispChild: IDispatch): HResult;
+begin
+  result := FDefault.Get_accChild(varChild, ppdispChild);
+end;
+
+function TControlAccessible.Get_accName(varChild: OleVariant; out pszName: WideString): HResult;
+begin
+  if IsSelfChild(varChild) then
+  begin
+    pszName := FName;
+    result := S_OK;
+  end
+  else
+    result := FDefault.Get_accName(varChild, pszName);
+end;
+
+function TControlAccessible.Get_accValue(varChild: OleVariant; out pszValue: WideString): HResult;
+begin
+  result := FDefault.Get_accValue(varChild, pszValue);
+end;
+
+function TControlAccessible.Get_accDescription(varChild: OleVariant; out pszDescription: WideString): HResult;
+begin
+  result := FDefault.Get_accDescription(varChild, pszDescription);
+end;
+
+function TControlAccessible.Get_accRole(varChild: OleVariant; out pvarRole: OleVariant): HResult;
+begin
+  result := FDefault.Get_accRole(varChild, pvarRole);
+end;
+
+function TControlAccessible.Get_accState(varChild: OleVariant; out pvarState: OleVariant): HResult;
+begin
+  result := FDefault.Get_accState(varChild, pvarState);
+end;
+
+function TControlAccessible.Get_accHelp(varChild: OleVariant; out pszHelp: WideString): HResult;
+begin
+  result := FDefault.Get_accHelp(varChild, pszHelp);
+end;
+
+function TControlAccessible.Get_accHelpTopic(out pszHelpFile: WideString; varChild: OleVariant;
+  out pidTopic: Integer): HResult;
+begin
+  result := FDefault.Get_accHelpTopic(pszHelpFile, varChild, pidTopic);
+end;
+
+function TControlAccessible.Get_accKeyboardShortcut(varChild: OleVariant;
+  out pszKeyboardShortcut: WideString): HResult;
+begin
+  result := FDefault.Get_accKeyboardShortcut(varChild, pszKeyboardShortcut);
+end;
+
+function TControlAccessible.Get_accFocus(out pvarChild: OleVariant): HResult;
+begin
+  result := FDefault.Get_accFocus(pvarChild);
+end;
+
+function TControlAccessible.Get_accSelection(out pvarChildren: OleVariant): HResult;
+begin
+  result := FDefault.Get_accSelection(pvarChildren);
+end;
+
+function TControlAccessible.Get_accDefaultAction(varChild: OleVariant;
+  out pszDefaultAction: WideString): HResult;
+begin
+  result := FDefault.Get_accDefaultAction(varChild, pszDefaultAction);
+end;
+
+function TControlAccessible.accSelect(flagsSelect: Integer; varChild: OleVariant): HResult;
+begin
+  result := FDefault.accSelect(flagsSelect, varChild);
+end;
+
+function TControlAccessible.accLocation(out pxLeft: Integer; out pyTop: Integer;
+  out pcxWidth: Integer; out pcyHeight: Integer; varChild: OleVariant): HResult;
+begin
+  result := FDefault.accLocation(pxLeft, pyTop, pcxWidth, pcyHeight, varChild);
+end;
+
+function TControlAccessible.accNavigate(navDir: Integer; varStart: OleVariant;
+  out pvarEndUpAt: OleVariant): HResult;
+begin
+  result := FDefault.accNavigate(navDir, varStart, pvarEndUpAt);
+end;
+
+function TControlAccessible.accHitTest(xLeft: Integer; yTop: Integer;
+  out pvarChild: OleVariant): HResult;
+begin
+  result := FDefault.accHitTest(xLeft, yTop, pvarChild);
+end;
+
+function TControlAccessible.accDoDefaultAction(varChild: OleVariant): HResult;
+begin
+  result := FDefault.accDoDefaultAction(varChild);
+end;
+
+function TControlAccessible.Set_accName(varChild: OleVariant; const pszName: WideString): HResult;
+begin
+  result := FDefault.Set_accName(varChild, pszName);
+end;
+
+function TControlAccessible.Set_accValue(varChild: OleVariant; const pszValue: WideString): HResult;
+begin
+  result := FDefault.Set_accValue(varChild, pszValue);
+end;
+
+function TControlAccessible.GetTypeInfoCount(out Count: Integer): HResult;
+begin
+  result := FDefault.GetTypeInfoCount(Count);
+end;
+
+function TControlAccessible.GetTypeInfo(Index, LocaleID: Integer; out TypeInfo): HResult;
+begin
+  result := FDefault.GetTypeInfo(Index, LocaleID, TypeInfo);
+end;
+
+function TControlAccessible.GetIDsOfNames(const IID: TGUID; Names: Pointer;
+  NameCount, LocaleID: Integer; DispIDs: Pointer): HResult;
+begin
+  result := FDefault.GetIDsOfNames(IID, Names, NameCount, LocaleID, DispIDs);
+end;
+
+function TControlAccessible.Invoke(DispID: Integer; const IID: TGUID; LocaleID: Integer;
+  Flags: Word; var Params; VarResult, ExcepInfo, ArgErr: Pointer): HResult;
+begin
+  result := FDefault.Invoke(DispID, IID, LocaleID, Flags, Params, VarResult, ExcepInfo, ArgErr);
+end;
+
+function CreateControlAccessible(AHandle: HWND; const AClassName, AName: string): IAccessible;
+var
+  acc: IAccessible;
+begin
+  if Failed(CreateStdAccessibleProxy(AHandle, PChar(AClassName), OBJID_CLIENT,
+    IID_IAccessible, acc)) then
+    exit(nil);
+
+  result := TControlAccessible.Create(acc, AName);
+end;
+
+procedure TAccessibleEdit.WndProc(var Message: TMessage);
+begin
+  if (Message.Msg = WM_GETOBJECT) and (Integer(Message.LParam) = Integer(OBJID_CLIENT)) then
+  begin
+    if FAccessible = nil then
+      FAccessible := CreateControlAccessible(Handle, 'Edit', FAccessibleName);
+
+    if FAccessible <> nil then
+    begin
+      Message.Result := LresultFromObject(IID_IAccessible, Message.WParam, FAccessible);
+      exit;
+    end;
+  end;
+
+  inherited;
+end;
+
+procedure TAccessibleEdit.DestroyWnd;
+begin
+  FAccessible := nil;
+  inherited;
+end;
+
+procedure TAccessibleCombo.WndProc(var Message: TMessage);
+begin
+  if (Message.Msg = WM_GETOBJECT) and (Integer(Message.LParam) = Integer(OBJID_CLIENT)) then
+  begin
+    if FAccessible = nil then
+      FAccessible := CreateControlAccessible(Handle, 'ComboBox', FAccessibleName);
+
+    if FAccessible <> nil then
+    begin
+      Message.Result := LresultFromObject(IID_IAccessible, Message.WParam, FAccessible);
+      exit;
+    end;
+  end;
+
+  inherited;
+end;
+
+procedure TAccessibleCombo.DestroyWnd;
+begin
+  FAccessible := nil;
+  inherited;
+end;
 
 procedure TfrmSettings.CreateParams(var Params: TCreateParams);
 begin
