@@ -57,6 +57,13 @@ type settingsDialog struct {
 
 var settingsWindowProc = windows.NewCallback(settingsWndProcFunc)
 
+var browseFolderCallback = windows.NewCallback(func(hwnd, msg, lparam, lpData uintptr) uintptr {
+	if msg == bffmInitialized && lpData != 0 {
+		pSendMessageW.Call(hwnd, bffmSetSelection, 1, lpData)
+	}
+	return 0
+})
+
 var (
 	settingsClassOnce sync.Once
 	settingsClassErr  error
@@ -426,29 +433,26 @@ func (s *settingsDialog) browseCore() {
 		dir = ""
 	}
 
-	var root uintptr
+	var selection []uint16
+	var selectionPtr uintptr
 	if dir != "" {
-		pSHParseDisplayName.Call(
-			uintptr(unsafe.Pointer(utf16Ptr(dir))),
-			0,
-			uintptr(unsafe.Pointer(&root)),
-			0, 0)
+		if u, err := windows.UTF16FromString(dir); err == nil {
+			selection = u
+			selectionPtr = uintptr(unsafe.Pointer(&selection[0]))
+		}
 	}
 
 	display := make([]uint16, 260)
-	title := utf16Ptr("选择 sing-box 核心目录")
 	bi := browseInfo{
 		HwndOwner:      s.hwnd,
-		PidlRoot:       root,
 		PszDisplayName: &display[0],
-		LpszTitle:      title,
-		UlFlags:        bifReturnOnlyFSDirs | bifNewDialogStyle,
+		LpszTitle:      utf16Ptr("选择 sing-box 核心目录"),
+		UlFlags:        bifReturnOnlyFSDirs | bifNewDialogStyle | bifEditBox,
+		Lpfn:           browseFolderCallback,
+		LParam:         selectionPtr,
 	}
 
 	pidl, _, _ := pSHBrowseForFolder.Call(uintptr(unsafe.Pointer(&bi)))
-	if root != 0 {
-		pCoTaskMemFree.Call(root)
-	}
 	if pidl != 0 {
 		path := make([]uint16, 260)
 		ok, _, _ := pSHGetPathFromIDList.Call(pidl, uintptr(unsafe.Pointer(&path[0])))
@@ -459,6 +463,7 @@ func (s *settingsDialog) browseCore() {
 	}
 	runtime.KeepAlive(&bi)
 	runtime.KeepAlive(display)
+	runtime.KeepAlive(selection)
 }
 
 func (s *settingsDialog) browseConfig() {
@@ -475,7 +480,7 @@ func (s *settingsDialog) browseConfig() {
 	buffer := make([]uint16, 32768)
 	copyToUTF16Array(buffer, initial)
 
-	filter := windows.StringToUTF16("配置文件 (*.json)\x00*.json\x00所有文件 (*.*)\x00*.*\x00")
+	filter := utf16FilterString("配置文件 (*.json)\x00*.json\x00所有文件 (*.*)\x00*.*\x00")
 
 	ofn := openFileName{
 		LStructSize:     uint32(unsafe.Sizeof(openFileName{})),
@@ -484,6 +489,7 @@ func (s *settingsDialog) browseConfig() {
 		LpstrFile:       &buffer[0],
 		NMaxFile:        uint32(len(buffer)),
 		LpstrInitialDir: initialDir,
+		NFilterIndex:    1,
 		Flags:           ofnFileMustExist | ofnPathMustExist | ofnExplorer | ofnNoChangeDir,
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -128,7 +129,10 @@ const (
 	ofnExplorer         = 0x00080000
 	ofnNoChangeDir      = 0x00000008
 	bifReturnOnlyFSDirs = 0x00000001
+	bifEditBox          = 0x00000010
 	bifNewDialogStyle   = 0x00000040
+	bffmInitialized     = 0x00000001
+	bffmSetSelection    = 0x00000467
 )
 
 const (
@@ -439,6 +443,17 @@ func copyToUTF16Array(dst []uint16, s string) {
 	dst[n] = 0
 }
 
+// utf16FilterString builds a double-NUL-terminated filter list for the common
+// dialogs; windows.StringToUTF16 panics on embedded NULs.
+func utf16FilterString(s string) []uint16 {
+	parts := strings.Split(s, "\x00")
+	out := make([]uint16, 0, len(s)+1)
+	for _, part := range parts {
+		out = append(out, windows.StringToUTF16(part)...)
+	}
+	return out
+}
+
 func loword(v uintptr) uint32 { return uint32(v & 0xFFFF) }
 func hiword(v uintptr) uint32 { return uint32((v >> 16) & 0xFFFF) }
 
@@ -531,18 +546,17 @@ const (
 var (
 	ole32 = windows.NewLazySystemDLL("ole32.dll")
 
-	pGetDlgItem         = user32.NewProc("GetDlgItem")
-	pIsChild            = user32.NewProc("IsChild")
-	pGetSysColor        = user32.NewProc("GetSysColor")
-	pGetSysColorBrush   = user32.NewProc("GetSysColorBrush")
-	pGetTickCount       = kernel32.NewProc("GetTickCount")
-	pOleInitialize      = ole32.NewProc("OleInitialize")
-	pOleUninitialize    = ole32.NewProc("OleUninitialize")
-	pCoCreateInstance   = ole32.NewProc("CoCreateInstance")
-	pCoTaskMemFree      = ole32.NewProc("CoTaskMemFree")
-	pSetBkMode          = gdi32.NewProc("SetBkMode")
-	pSetTextColor       = gdi32.NewProc("SetTextColor")
-	pSHParseDisplayName = shell32.NewProc("SHParseDisplayName")
+	pGetDlgItem       = user32.NewProc("GetDlgItem")
+	pIsChild          = user32.NewProc("IsChild")
+	pGetSysColor      = user32.NewProc("GetSysColor")
+	pGetSysColorBrush = user32.NewProc("GetSysColorBrush")
+	pGetTickCount     = kernel32.NewProc("GetTickCount")
+	pOleInitialize    = ole32.NewProc("OleInitialize")
+	pOleUninitialize  = ole32.NewProc("OleUninitialize")
+	pCoCreateInstance = ole32.NewProc("CoCreateInstance")
+	pCoTaskMemFree    = ole32.NewProc("CoTaskMemFree")
+	pSetBkMode        = gdi32.NewProc("SetBkMode")
+	pSetTextColor     = gdi32.NewProc("SetTextColor")
 )
 
 func createWindowEx(exStyle uintptr, className, title string, style uintptr,
