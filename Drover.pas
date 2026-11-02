@@ -76,6 +76,7 @@ type
     procedure ResetSelectors;
     procedure PersistSelectors;
     procedure PersistRuntimeState;
+    procedure SetSelectorMenuLayout(ALayout: TSelectorMenuLayout);
     function NeedsElevation: boolean;
     function StoredSystemProxy(out AValue: boolean): boolean;
     procedure StoreSystemProxy(AValue: boolean);
@@ -420,6 +421,11 @@ end;
 procedure TDrover.PersistRuntimeState;
 begin
   PersistSelectors;
+end;
+
+procedure TDrover.SetSelectorMenuLayout(ALayout: TSelectorMenuLayout);
+begin
+  FOptions.selectorMenuLayout := ALayout;
 end;
 
 function TDrover.NeedsElevation: boolean;

@@ -138,6 +138,9 @@
         <DCCReference Include="Main.pas">
             <Form>frmMain</Form>
         </DCCReference>
+        <DCCReference Include="SettingsForm.pas">
+            <Form>frmSettings</Form>
+        </DCCReference>
         <DCCReference Include="SystemProxy.pas"/>
         <DCCReference Include="Drover.pas"/>
         <DCCReference Include="Options.pas"/>

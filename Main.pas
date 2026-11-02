@@ -1,12 +1,13 @@
-unit Main;
+﻿unit Main;
 
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
-  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.Menus, System.Net.HttpClient,
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, System.UITypes,
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.Menus, System.Net.HttpClient,
   System.Net.URLClient, System.JSON, System.IOUtils, System.Generics.Collections, Options, Drover,
-  AppElevation, AppArgs, SingBoxConfig, ElevatedTrayIcon, Autostart, Winapi.ShellAPI, CoreSupervisor;
+  AppElevation, AppArgs, SingBoxConfig, ElevatedTrayIcon, Autostart, Winapi.ShellAPI, CoreSupervisor,
+  SettingsForm;
 
 type
   TPendingSelectorRequests = TDictionary<NativeInt, TMenuItem>;
@@ -40,9 +41,13 @@ type
   private
     TrayIcon: TElevatedTrayIcon;
     FDrover: TDrover;
+    FSettingsForm: TfrmSettings;
     FIsTunActive: boolean;
     FIsSystemProxyActive: boolean;
     FClosePending: boolean;
+    FSettingsOpening: boolean;
+    FSettingsClosed: boolean;
+    FSettingsClosedTick: cardinal;
     FLastRequestId: NativeInt;
     FPendingSelectorRequests: TPendingSelectorRequests;
 
@@ -57,6 +62,8 @@ type
     procedure WMAutostartResult(var msg: TMessage); message WM_AUTOSTART_RESULT;
     procedure ShowBalloon(AText, ATitle: string; AFlags: TBalloonFlags = bfInfo; ATimeout: integer = 10000);
     procedure ShowOnlyExitInTray;
+    procedure ShowSettings;
+    procedure HandleSettingsClose(Sender: TObject; var Action: TCloseAction);
     procedure InitAutostart;
     procedure StartAutostartThread(AAction: TAutostartAction);
     procedure HandleAutostartResult(const r: TAutostartResult);
@@ -78,6 +85,10 @@ begin
   FIsTunActive := false;
   FIsSystemProxyActive := false;
   FClosePending := false;
+  FSettingsForm := nil;
+  FSettingsOpening := false;
+  FSettingsClosed := false;
+  FSettingsClosedTick := 0;
   FLastRequestId := 0;
   FPendingSelectorRequests := TPendingSelectorRequests.Create;
 
@@ -186,17 +197,6 @@ begin
   ShellExecute(0, 'open', 'https://github.com/hdrover/sing-box-drover', nil, nil, SW_SHOWNORMAL);
 end;
 
-procedure TfrmMain.miDashboardClick(Sender: TObject);
-var
-  url: string;
-begin
-  url := FDrover.sbConfig.clashApi.DashboardUrl;
-  if url = '' then
-    exit;
-
-  ShellExecute(0, 'open', PChar(url), nil, nil, SW_SHOWNORMAL);
-end;
-
 procedure TfrmMain.miRestartClick(Sender: TObject);
 var
   flags: TAppFlags;
@@ -211,6 +211,17 @@ begin
   FDrover.PersistRuntimeState;
   if LaunchSelf(FlagsToCmdLine(flags), Handle, IsProcessElevated) then
     Close;
+end;
+
+procedure TfrmMain.miDashboardClick(Sender: TObject);
+var
+  url: string;
+begin
+  url := FDrover.sbConfig.clashApi.DashboardUrl;
+  if url = '' then
+    exit;
+
+  ShellExecute(0, 'open', PChar(url), nil, nil, SW_SHOWNORMAL);
 end;
 
 procedure TfrmMain.InitDrover(ADrover: TDrover);
@@ -306,6 +317,9 @@ var
 begin
   selectors := FDrover.selectors;
   selectorCount := Length(selectors);
+
+  while miNodes.Count > 0 do
+    miNodes.Items[0].Free;
 
   miNodes.Visible := (selectorCount >= 1) and (selectorCount <= 50);
   if not miNodes.Visible then
@@ -475,6 +489,9 @@ begin
   FClosePending := true;
   ShowOnlyExitInTray;
 
+  if Assigned(FSettingsForm) then
+    FSettingsForm.Close;
+
   ToggleTunDisplay(false, false);
 
   if FIsSystemProxyActive then
@@ -501,6 +518,9 @@ begin
 
   FClosePending := true;
   ShowOnlyExitInTray;
+
+  if Assigned(FSettingsForm) then
+    FSettingsForm.Close;
 
   ToggleTunDisplay(false, false);
 
@@ -529,21 +549,74 @@ begin
 end;
 
 procedure TfrmMain.TrayIconClick(Sender: TObject);
-var
-  shiftHeld: boolean;
 begin
-  shiftHeld := (GetKeyState(VK_SHIFT) and $8000) <> 0;
+  ShowSettings;
+end;
 
-  if shiftHeld then
+procedure TfrmMain.ShowSettings;
+var
+  settings: TfrmSettings;
+begin
+  if (not Assigned(FDrover)) or FClosePending then
+    exit;
+
+  // A tray activation can arrive just after the keyboard accept (Enter)
+  // saved and closed the settings window; don't reopen immediately.
+  if FSettingsClosed and (GetTickCount - FSettingsClosedTick < 400) then
+    exit;
+
+  if Assigned(FSettingsForm) then
   begin
-    if miTun.Visible and miTun.Enabled then
-      ToggleTun(not FIsTunActive);
-  end
-  else
-  begin
-    if not FIsTunActive then
-      ToggleSystemProxy(not FIsSystemProxyActive);
+    FSettingsForm.Show;
+    FSettingsForm.BringToFront;
+    SetForegroundWindow(FSettingsForm.Handle);
+    exit;
   end;
+
+  // Showing the dialog pumps messages, so a second tray activation can
+  // re-enter here before FSettingsForm is assigned.
+  if FSettingsOpening then
+    exit;
+
+  FSettingsOpening := true;
+  try
+    settings := TfrmSettings.Create(Self);
+    settings.Init(false, '');
+    settings.OnClose := HandleSettingsClose;
+    FSettingsForm := settings;
+    settings.Show;
+    SetForegroundWindow(settings.Handle);
+  finally
+    FSettingsOpening := false;
+  end;
+end;
+
+procedure TfrmMain.HandleSettingsClose(Sender: TObject; var Action: TCloseAction);
+var
+  settings: TfrmSettings;
+begin
+  settings := TfrmSettings(Sender);
+
+  Action := caFree;
+  settings.OnClose := nil;
+  FSettingsForm := nil;
+  FSettingsClosed := true;
+  FSettingsClosedTick := GetTickCount;
+
+  if FClosePending then
+    exit;
+
+  if (settings.ModalResult <> mrOk) or (not Assigned(FDrover)) then
+    exit;
+
+  if settings.RestartRequired then
+  begin
+    miRestartClick(nil);
+    exit;
+  end;
+
+  FDrover.SetSelectorMenuLayout(settings.SelectedLayout);
+  DrawSelectors;
 end;
 
 procedure TfrmMain.miSelectorClick(Sender: TObject);

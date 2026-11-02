@@ -6,8 +6,10 @@ uses
   Winapi.Windows,
   Winapi.Messages,
   System.SysUtils,
+  System.UITypes,
   Vcl.Forms,
   Main in 'Main.pas' {frmMain},
+  SettingsForm in 'SettingsForm.pas' {frmSettings},
   SystemProxy in 'SystemProxy.pas',
   Drover in 'Drover.pas',
   Options in 'Options.pas',
@@ -37,15 +39,60 @@ var
   Drover: TDrover;
   flags: TAppFlags;
   s: string;
+  firstRun: boolean;
+
+function ShowSettingsDialog(AFirstRun: boolean; const AError: string): TModalResult;
+var
+  dlg: TfrmSettings;
+begin
+  dlg := TfrmSettings.Create(nil);
+  try
+    dlg.Init(AFirstRun, AError);
+    result := dlg.ShowModal;
+  finally
+    dlg.Free;
+  end;
+end;
 
 begin
+  Application.Initialize;
+  Application.Title := APP_TITLE;
+  Application.MainFormOnTaskbar := false;
+  Application.ShowMainForm := false;
+
+  Drover := nil;
   try
     flags := GetAppFlags;
 
     if not AcquireSingleInstance('SingBoxDrover_SingleInstance_Mutex', afRestart in flags) then
       raise Exception.Create('Another instance of this application is already running.');
 
-    Drover := TDrover.Create(flags);
+    firstRun := not FileExists(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) +
+      OPTIONS_FILENAME);
+
+    while true do
+    begin
+      if firstRun then
+      begin
+        if ShowSettingsDialog(true, '') <> mrOk then
+          exit;
+        firstRun := false;
+      end;
+
+      try
+        Drover := TDrover.Create(flags);
+        break;
+      except
+        on E: Exception do
+        begin
+          if ShowSettingsDialog(false, E.Message) <> mrOk then
+          begin
+            MessageBox(0, PChar(E.Message), PChar(APP_TITLE), MB_ICONERROR);
+            exit;
+          end;
+        end;
+      end;
+    end;
 
     if Drover.NeedsElevation then
     begin
@@ -67,10 +114,6 @@ begin
     end;
   end;
 
-  Application.Initialize;
-  Application.Title := APP_TITLE;
-  Application.MainFormOnTaskbar := false;
-  Application.ShowMainForm := false;
   Application.CreateForm(TfrmMain, frmMain);
   frmMain.InitDrover(Drover);
   try

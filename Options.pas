@@ -26,9 +26,12 @@ type
     logFile: string;
 
     class function Load(filename: string): TDroverOptions; static;
+    class procedure Save(const filename, sbDir, sbConfigFile: string;
+      layout: TSelectorMenuLayout); static;
   private
     class function ParseTunStartMode(s: string): TTunStartMode; static;
     class function ParseSelectorMenuLayout(s: string): TSelectorMenuLayout; static;
+    class function LayoutToValue(layout: TSelectorMenuLayout): string; static;
   end;
 
 implementation
@@ -51,6 +54,18 @@ begin
     exit(TSelectorMenuLayout.smlNested)
   else
     exit(TSelectorMenuLayout.smlAuto);
+end;
+
+class function TDroverOptions.LayoutToValue(layout: TSelectorMenuLayout): string;
+begin
+  case layout of
+    smlFlat:
+      result := 'flat';
+    smlNested:
+      result := 'nested';
+  else
+    result := 'auto';
+  end;
 end;
 
 class function TDroverOptions.Load(filename: string): TDroverOptions;
@@ -104,6 +119,21 @@ begin
       f.Free;
     end;
   except
+  end;
+end;
+
+class procedure TDroverOptions.Save(const filename, sbDir, sbConfigFile: string;
+  layout: TSelectorMenuLayout);
+var
+  f: TIniFile;
+begin
+  f := TIniFile.Create(filename);
+  try
+    f.WriteString(SECTION_MAIN, 'sb-dir', sbDir);
+    f.WriteString(SECTION_MAIN, 'sb-config-file', sbConfigFile);
+    f.WriteString(SECTION_MAIN, 'selector-menu-layout', LayoutToValue(layout));
+  finally
+    f.Free;
   end;
 end;
 
