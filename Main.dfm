@@ -14,6 +14,7 @@
   OnCreate = FormCreate
   TextHeight = 15
   object PopupMenu: TPopupMenu
+    AutoHotkeys = maManual
     Left = 248
     Top = 40
     object miExtras: TMenuItem
