@@ -47,6 +47,10 @@ type drover struct {
 	clashMode         string
 	clashModes        []string
 
+	selectorStates       map[string]string
+	selectorQueryPending bool
+	selectorSerial       int
+
 	mu                sync.Mutex
 	dispatch          func(func())
 	pendingOps        []func()
@@ -180,6 +184,7 @@ func (d *drover) handleCoreEvent(ev coreEvent) {
 
 	case cekAPIReady:
 		d.resetSelectors()
+		d.refreshSelectorStates()
 
 	case cekConfigModes, cekModeDone:
 		d.clashMode = ev.Mode
@@ -187,6 +192,18 @@ func (d *drover) handleCoreEvent(ev coreEvent) {
 			d.clashModes = ev.Modes
 		}
 		d.notifyEvent(droverEvent{Kind: dekClashModes})
+
+	case cekSelectorStates:
+		d.selectorQueryPending = false
+		if ev.SelectorSerial != d.selectorSerial {
+			return
+		}
+		if d.selectorStates == nil {
+			d.selectorStates = map[string]string{}
+		}
+		for name, now := range ev.SelectorNow {
+			d.selectorStates[name] = now
+		}
 
 	case cekSelectorDone:
 		d.notifyEvent(droverEvent{Kind: dekCoreEvent, CoreEvent: ev})
@@ -293,11 +310,34 @@ func (d *drover) editSelector(selectorIdx, outboundIdx, requestID int) bool {
 		return false
 	}
 
+	d.selectorSerial++
 	d.selectors[selectorIdx].DefaultIndex = outboundIdx
+	if d.selectorStates == nil {
+		d.selectorStates = map[string]string{}
+	}
+	d.selectorStates[selector.Name] = selector.Outbounds[outboundIdx]
 	d.persistSelectors()
 
 	task := selectorTask{Name: selector.Name, Value: selector.Outbounds[outboundIdx]}
 	return d.supervisor.requestSetSelectors([]selectorTask{task}, requestID)
+}
+
+// refreshSelectorStates asks the core for the active outbound of every selector.
+// The request runs in the background so opening the menu is never blocked.
+func (d *drover) refreshSelectorStates() {
+	if len(d.selectors) == 0 || d.selectorQueryPending {
+		return
+	}
+	names := make([]string, 0, len(d.selectors))
+	for _, selector := range d.selectors {
+		names = append(names, selector.Name)
+	}
+	d.selectorQueryPending = d.supervisor.requestQuerySelectorStates(names, d.selectorSerial)
+}
+
+func (d *drover) selectorNow(name string) (string, bool) {
+	value, ok := d.selectorStates[name]
+	return value, ok
 }
 
 func (d *drover) setClashMode(mode string) bool {

@@ -376,6 +376,8 @@ func (u *mainUI) handleTray(wparam, lparam uintptr) {
 // --- Menu ----------------------------------------------------------------
 
 func (u *mainUI) showTrayMenu() {
+	u.d.refreshSelectorStates()
+
 	hmenu, _ := u.buildMenu()
 	if hmenu == 0 {
 		return
@@ -520,9 +522,19 @@ func (u *mainUI) appendNodeMenu(menu uintptr) {
 			appendMenu(sub, mfString|mfDisabled, 0, selector.Name)
 		}
 
+		checkedIndex := selector.DefaultIndex
+		if now, ok := u.d.selectorNow(selector.Name); ok {
+			for j, outbound := range selector.Outbounds {
+				if outbound == now {
+					checkedIndex = j
+					break
+				}
+			}
+		}
+
 		for outboundIdx, outbound := range selector.Outbounds {
 			flags := uintptr(mfString)
-			if outboundIdx == selector.DefaultIndex {
+			if outboundIdx == checkedIndex {
 				flags |= mfChecked
 			}
 			if disabled[selectorIdx*1000+outboundIdx] {

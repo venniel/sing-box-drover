@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,7 @@ const (
 	apiCheckInterval      = 500 * time.Millisecond
 	apiCheckTimeout       = 60 * time.Second
 	connectionsFlushLimit = 2 * time.Second
+	selectorQueryTimeout  = 300 * time.Millisecond
 )
 
 type coreState int32
@@ -51,15 +53,18 @@ const (
 	cekConfigModes
 	cekSelectorDone
 	cekModeDone
+	cekSelectorStates
 )
 
 type coreEvent struct {
-	Kind      coreEventKind
-	State     coreState
-	Msg       string
-	RequestID int
-	Mode      string
-	Modes     []string
+	Kind           coreEventKind
+	State          coreState
+	Msg            string
+	RequestID      int
+	Mode           string
+	Modes          []string
+	SelectorNow    map[string]string
+	SelectorSerial int
 }
 
 type selectorTask struct {
@@ -75,16 +80,19 @@ const (
 	cmdStop
 	cmdSetSelectors
 	cmdSetMode
+	cmdQuerySelectorStates
 )
 
-var coreCommandNames = [...]string{"None", "Start", "Stop", "SetSelectors", "SetMode"}
+var coreCommandNames = [...]string{"None", "Start", "Stop", "SetSelectors", "SetMode", "QuerySelectorStates"}
 
 type coreCommand struct {
-	Kind          coreCommandKind
-	ConfigJSON    string
-	SelectorTasks []selectorTask
-	RequestID     int
-	Mode          string
+	Kind           coreCommandKind
+	ConfigJSON     string
+	SelectorTasks  []selectorTask
+	RequestID      int
+	Mode           string
+	SelectorNames  []string
+	SelectorSerial int
 }
 
 type coreSupervisor struct {
@@ -172,6 +180,10 @@ func (s *coreSupervisor) requestSetMode(mode string) bool {
 	return s.post(coreCommand{Kind: cmdSetMode, Mode: mode})
 }
 
+func (s *coreSupervisor) requestQuerySelectorStates(names []string, serial int) bool {
+	return s.post(coreCommand{Kind: cmdQuerySelectorStates, SelectorNames: names, SelectorSerial: serial})
+}
+
 func (s *coreSupervisor) post(cmd coreCommand) bool {
 	select {
 	case s.commands <- cmd:
@@ -198,6 +210,8 @@ func (s *coreSupervisor) handleCommand(cmd coreCommand) {
 		s.doSetSelectors(cmd.SelectorTasks, cmd.RequestID)
 	case cmdSetMode:
 		s.doSetMode(cmd.Mode)
+	case cmdQuerySelectorStates:
+		s.doQuerySelectorStates(cmd.SelectorNames, cmd.SelectorSerial)
 	}
 }
 
@@ -467,6 +481,25 @@ func (s *coreSupervisor) doSetMode(mode string) {
 		return
 	}
 	s.notifyEvent(coreEvent{Kind: cekModeDone, Mode: mode})
+}
+
+func (s *coreSupervisor) doQuerySelectorStates(names []string, serial int) {
+	states := make(map[string]string, len(names))
+	for _, name := range names {
+		text, err := s.api.request("GET", "/proxies/"+url.PathEscape(name), "", selectorQueryTimeout)
+		if err != nil {
+			// Core is likely unavailable; keep the cached values.
+			break
+		}
+		var proxy struct {
+			Now string `json:"now"`
+		}
+		if err := json.Unmarshal([]byte(text), &proxy); err != nil || proxy.Now == "" {
+			continue
+		}
+		states[name] = proxy.Now
+	}
+	s.notifyEvent(coreEvent{Kind: cekSelectorStates, SelectorNow: states, SelectorSerial: serial})
 }
 
 func (s *coreSupervisor) doSetSelectors(tasks []selectorTask, requestID int) {
