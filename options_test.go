@@ -26,8 +26,8 @@ func TestLoadOptionsDefaults(t *testing.T) {
 	if opts.SelectorMenuLayout != smlAuto {
 		t.Errorf("SelectorMenuLayout = %v, want auto", opts.SelectorMenuLayout)
 	}
-	if !opts.SelectorPersist {
-		t.Error("SelectorPersist should default to true")
+	if opts.SelectorPersist {
+		t.Error("SelectorPersist should default to false")
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	settingsWindowClass = "sing-box-drover-settings"
+	settingsWindowClass = "sing-box-go-settings"
 
 	idSettingsCoreEdit     = 1001
 	idSettingsBrowseCore   = 1002
@@ -131,9 +131,9 @@ func newSettingsDialog(owner uintptr, firstRun bool, errorMessage string) (*sett
 	}
 	s.initialConfigFile = configFile
 
-	caption := "sing-box-drover 设置"
+	caption := "sing-box-go 设置"
 	if firstRun {
-		caption = "sing-box-drover 初始设置"
+		caption = "sing-box-go 初始设置"
 	}
 
 	s.dpi = getSystemDPI()

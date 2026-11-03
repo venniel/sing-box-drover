@@ -1,4 +1,4 @@
-module sing-box-drover
+module sing-box-go
 
 go 1.26.0
 

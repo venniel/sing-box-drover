@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	stateFilename       = "sing-box-drover.state.json"
+	stateFilename       = "sing-box-go.state.json"
 	stateKeyTun         = "tun"
 	stateKeySystemProxy = "system-proxy"
 )
@@ -201,9 +201,14 @@ func (d *drover) handleCoreEvent(ev coreEvent) {
 		if d.selectorStates == nil {
 			d.selectorStates = map[string]string{}
 		}
+		changedValues := map[string]string{}
 		for name, now := range ev.SelectorNow {
 			d.selectorStates[name] = now
+			if d.options.SelectorPersist && applySelectorNow(d.selectors, name, now) {
+				changedValues[name] = now
+			}
 		}
+		d.persistSelectorValues(changedValues)
 
 	case cekSelectorDone:
 		d.notifyEvent(droverEvent{Kind: dekCoreEvent, CoreEvent: ev})
@@ -276,6 +281,15 @@ func (d *drover) persistRuntimeState() {
 	d.persistSelectors()
 }
 
+func (d *drover) persistSelectorValues(values map[string]string) {
+	if len(values) == 0 {
+		return
+	}
+	if err := d.state.syncSelectors(values, nil); err != nil {
+		d.log(strings.TrimSpace("Failed to persist selector state. " + err.Error()))
+	}
+}
+
 func (d *drover) setSelectorMenuLayout(layout selectorMenuLayout) {
 	d.options.SelectorMenuLayout = layout
 }
@@ -316,10 +330,34 @@ func (d *drover) editSelector(selectorIdx, outboundIdx, requestID int) bool {
 		d.selectorStates = map[string]string{}
 	}
 	d.selectorStates[selector.Name] = selector.Outbounds[outboundIdx]
-	d.persistSelectors()
+	if d.options.SelectorPersist {
+		d.persistSelectors()
+	}
 
 	task := selectorTask{Name: selector.Name, Value: selector.Outbounds[outboundIdx]}
 	return d.supervisor.requestSetSelectors([]selectorTask{task}, requestID)
+}
+
+// applySelectorNow points the selector at the outbound reported by the core.
+// It reports whether the remembered index changed.
+func applySelectorNow(selectors []configSelector, name, now string) bool {
+	for i := range selectors {
+		if selectors[i].Name != name {
+			continue
+		}
+		for j, outbound := range selectors[i].Outbounds {
+			if outbound != now {
+				continue
+			}
+			if selectors[i].DefaultIndex == j {
+				return false
+			}
+			selectors[i].DefaultIndex = j
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // refreshSelectorStates asks the core for the active outbound of every selector.

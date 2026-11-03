@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	mainWindowClass = "sing-box-drover-main"
+	mainWindowClass = "sing-box-go-main"
 	wmAppDispatch   = wmApp + 2
 	trayIconID      = 1
 

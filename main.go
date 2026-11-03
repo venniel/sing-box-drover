@@ -6,7 +6,7 @@ import (
 	"runtime"
 )
 
-const appTitle = "sing-box-drover"
+const appTitle = "sing-box-go"
 
 func main() {
 	runtime.LockOSThread()
@@ -19,7 +19,7 @@ func main() {
 
 	flags := parseAppFlags(os.Args[1:])
 
-	if !acquireSingleInstance("SingBoxDrover_SingleInstance_Mutex", flags.has(afRestart), 10000) {
+	if !acquireSingleInstance("SingBoxGo_SingleInstance_Mutex", flags.has(afRestart), 10000) {
 		messageBox("Another instance of this application is already running.", appTitle, mbIconError)
 		return
 	}

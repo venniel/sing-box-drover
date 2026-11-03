@@ -168,7 +168,7 @@ func (u *configUpdater) doUpdate() {
 }
 
 func (u *configUpdater) buildUserAgent() string {
-	result := "sing-box-drover"
+	result := "sing-box-go"
 	if version := u.cli.getVersion(); version != "" {
 		result += " (sing-box " + version + ")"
 	}

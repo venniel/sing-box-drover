@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	optionsFilename = "sing-box-drover.ini"
-	optionsSection  = "sing-box-drover"
+	optionsFilename = "sing-box-go.ini"
+	optionsSection  = "sing-box-go"
 )
 
 type tunStartMode int
@@ -46,7 +46,7 @@ func loadOptions(filename string) droverOptions {
 		SystemProxyAuto:    false,
 		TunStartMode:       tsmOff,
 		SelectorMenuLayout: smlAuto,
-		SelectorPersist:    true,
+		SelectorPersist:    false,
 	}
 
 	lines, _, ok := readTextLines(filename)
@@ -86,7 +86,7 @@ func loadOptions(filename string) droverOptions {
 		opts.SelectorMenuLayout = parseSelectorMenuLayout(value)
 	}
 	if value, found := iniGet(lines, optionsSection, "selector-persist"); found {
-		opts.SelectorPersist = parseBool(value, true)
+		opts.SelectorPersist = parseBool(value, false)
 	}
 	if value, found := iniGet(lines, optionsSection, "log-file"); found {
 		if value != "" && !strings.Contains(value, ":") {

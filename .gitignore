@@ -85,7 +85,7 @@ modules/
 
 # Local test inputs and runtime artifacts
 /haita.json
-/sing-box-drover.state.json
+/sing-box-go.state.json
 /cache.db
 /ui/
 *.log
