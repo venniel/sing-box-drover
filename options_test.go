@@ -26,9 +26,6 @@ func TestLoadOptionsDefaults(t *testing.T) {
 	if opts.SelectorMenuLayout != smlAuto {
 		t.Errorf("SelectorMenuLayout = %v, want auto", opts.SelectorMenuLayout)
 	}
-	if opts.SelectorPersist {
-		t.Error("SelectorPersist should default to false")
-	}
 }
 
 func TestLoadOptionsValues(t *testing.T) {
@@ -40,7 +37,6 @@ func TestLoadOptionsValues(t *testing.T) {
 		"tun-start-mode = on\r\n" +
 		"system-proxy-auto = 1\r\n" +
 		"selector-menu-layout = nested\r\n" +
-		"selector-persist = 0\r\n" +
 		"log-file = drover.log\r\n"
 	if err := os.WriteFile(ini, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -61,9 +57,6 @@ func TestLoadOptionsValues(t *testing.T) {
 	}
 	if opts.SelectorMenuLayout != smlNested {
 		t.Errorf("SelectorMenuLayout = %v, want nested", opts.SelectorMenuLayout)
-	}
-	if opts.SelectorPersist {
-		t.Error("SelectorPersist should be false")
 	}
 	if opts.LogFile != filepath.Join(dir, "drover.log") {
 		t.Errorf("LogFile = %q", opts.LogFile)

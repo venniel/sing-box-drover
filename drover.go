@@ -89,9 +89,6 @@ func newDrover(flags appFlags) (*drover, error) {
 	d.selectors = append([]configSelector(nil), cfg.Selectors...)
 
 	d.state = newAppState(d.currentProcessDir + stateFilename)
-	if flags.has(afRestart) || d.options.SelectorPersist {
-		d.applyPersistedSelectors()
-	}
 
 	if wantsTun, ok := d.state.getBool(stateKeyTun); ok {
 		d.wantsTun = wantsTun
@@ -183,7 +180,6 @@ func (d *drover) handleCoreEvent(ev coreEvent) {
 		d.notifyEvent(droverEvent{Kind: dekError, Msg: ev.Msg})
 
 	case cekAPIReady:
-		d.resetSelectors()
 		d.refreshSelectorStates()
 
 	case cekConfigModes, cekModeDone:
@@ -201,14 +197,9 @@ func (d *drover) handleCoreEvent(ev coreEvent) {
 		if d.selectorStates == nil {
 			d.selectorStates = map[string]string{}
 		}
-		changedValues := map[string]string{}
 		for name, now := range ev.SelectorNow {
 			d.selectorStates[name] = now
-			if d.options.SelectorPersist && applySelectorNow(d.selectors, name, now) {
-				changedValues[name] = now
-			}
 		}
-		d.persistSelectorValues(changedValues)
 
 	case cekSelectorDone:
 		d.notifyEvent(droverEvent{Kind: dekCoreEvent, CoreEvent: ev})
@@ -231,63 +222,6 @@ func (d *drover) setNotifyHandle(hwnd uintptr) {
 	d.mu.Lock()
 	d.notifyHwnd = hwnd
 	d.mu.Unlock()
-}
-
-func (d *drover) applyPersistedSelectors() {
-	for i := range d.selectors {
-		saved, ok := d.state.getSelector(d.selectors[i].Name)
-		if !ok {
-			continue
-		}
-		for j, outbound := range d.selectors[i].Outbounds {
-			if outbound == saved {
-				d.selectors[i].DefaultIndex = j
-				break
-			}
-		}
-	}
-}
-
-func (d *drover) resetSelectors() {
-	var tasks []selectorTask
-	for _, selector := range d.selectors {
-		idx := selector.DefaultIndex
-		if idx >= 0 && idx < len(selector.Outbounds) {
-			tasks = append(tasks, selectorTask{Name: selector.Name, Value: selector.Outbounds[idx]})
-		}
-	}
-	if len(tasks) == 0 {
-		return
-	}
-	d.supervisor.requestSetSelectors(tasks, 0)
-}
-
-func (d *drover) persistSelectors() {
-	values := make(map[string]string, len(d.selectors))
-	scope := make([]string, 0, len(d.selectors))
-	for _, selector := range d.selectors {
-		scope = append(scope, selector.Name)
-		idx := selector.DefaultIndex
-		if idx >= 0 && idx < len(selector.Outbounds) {
-			values[selector.Name] = selector.Outbounds[idx]
-		}
-	}
-	if err := d.state.syncSelectors(values, scope); err != nil {
-		d.log(strings.TrimSpace(fmt.Sprintf("Failed to persist selector state. %s", err.Error())))
-	}
-}
-
-func (d *drover) persistRuntimeState() {
-	d.persistSelectors()
-}
-
-func (d *drover) persistSelectorValues(values map[string]string) {
-	if len(values) == 0 {
-		return
-	}
-	if err := d.state.syncSelectors(values, nil); err != nil {
-		d.log(strings.TrimSpace("Failed to persist selector state. " + err.Error()))
-	}
 }
 
 func (d *drover) setSelectorMenuLayout(layout selectorMenuLayout) {
@@ -330,34 +264,9 @@ func (d *drover) editSelector(selectorIdx, outboundIdx, requestID int) bool {
 		d.selectorStates = map[string]string{}
 	}
 	d.selectorStates[selector.Name] = selector.Outbounds[outboundIdx]
-	if d.options.SelectorPersist {
-		d.persistSelectors()
-	}
 
 	task := selectorTask{Name: selector.Name, Value: selector.Outbounds[outboundIdx]}
 	return d.supervisor.requestSetSelectors([]selectorTask{task}, requestID)
-}
-
-// applySelectorNow points the selector at the outbound reported by the core.
-// It reports whether the remembered index changed.
-func applySelectorNow(selectors []configSelector, name, now string) bool {
-	for i := range selectors {
-		if selectors[i].Name != name {
-			continue
-		}
-		for j, outbound := range selectors[i].Outbounds {
-			if outbound != now {
-				continue
-			}
-			if selectors[i].DefaultIndex == j {
-				return false
-			}
-			selectors[i].DefaultIndex = j
-			return true
-		}
-		return false
-	}
-	return false
 }
 
 // refreshSelectorStates asks the core for the active outbound of every selector.

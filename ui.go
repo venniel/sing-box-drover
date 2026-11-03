@@ -643,7 +643,6 @@ func (u *mainUI) restartApp() {
 		flags |= 1 << afTun
 	}
 
-	u.d.persistRuntimeState()
 	if launchSelf(flagsToCmdLine(flags), u.hwnd, isProcessElevated()) {
 		u.requestClose()
 	}
@@ -682,7 +681,6 @@ func (u *mainUI) toggleTun(enable bool) {
 
 	if !isProcessElevated() {
 		u.d.storeTun(enable)
-		u.d.persistRuntimeState()
 		flags := appFlags(1<<afTun | 1<<afRestart)
 		if launchSelf(flagsToCmdLine(flags), u.hwnd, true) {
 			u.requestClose()
@@ -775,7 +773,6 @@ func (u *mainUI) toggleAutostart() {
 	}
 
 	if !isProcessElevated() {
-		u.d.persistRuntimeState()
 		flags := appFlags(1<<afRestart | 1<<flag)
 		if launchSelf(flagsToCmdLine(flags), u.hwnd, true) {
 			u.requestClose()

@@ -34,7 +34,6 @@ type droverOptions struct {
 	SystemProxyAuto    bool
 	TunStartMode       tunStartMode
 	SelectorMenuLayout selectorMenuLayout
-	SelectorPersist    bool
 	LogFile            string
 }
 
@@ -46,7 +45,6 @@ func loadOptions(filename string) droverOptions {
 		SystemProxyAuto:    false,
 		TunStartMode:       tsmOff,
 		SelectorMenuLayout: smlAuto,
-		SelectorPersist:    false,
 	}
 
 	lines, _, ok := readTextLines(filename)
@@ -84,9 +82,6 @@ func loadOptions(filename string) droverOptions {
 	}
 	if value, found := iniGet(lines, optionsSection, "selector-menu-layout"); found {
 		opts.SelectorMenuLayout = parseSelectorMenuLayout(value)
-	}
-	if value, found := iniGet(lines, optionsSection, "selector-persist"); found {
-		opts.SelectorPersist = parseBool(value, false)
 	}
 	if value, found := iniGet(lines, optionsSection, "log-file"); found {
 		if value != "" && !strings.Contains(value, ":") {

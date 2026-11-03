@@ -22,14 +22,14 @@ becoming another all-in-one GUI client.
     - **更多** (More) — restart, autostart, project page
     - **模式** (Mode) — Clash mode switcher, populated from the Clash API
     - **节点** (Nodes) — selector outbounds; the outbound currently used by the core is marked, even when it was
-      changed from outside this program (for example from the dashboard)
+      changed from outside this program (for example from the dashboard). The program never pushes a selection to
+      the core at startup; persistence is left to the core (see below).
     - **TUN 模式** (TUN mode) — available when the config contains a `tun` inbound; asks for elevation when needed
     - **系统代理** (System proxy) — toggles the Windows proxy settings
     - **面板** (Dashboard) — opens the Clash dashboard if one is configured
     - **退出** (Quit) — gracefully stops the core and exits
 - The system proxy is restored on the next launch when it was left enabled, and is disabled on normal exit
 - TUN state is remembered across restarts; enabling TUN relaunches the program elevated (UAC)
-- Selector choices can be remembered across restarts
 - Remote `.bpf` profiles can be updated automatically
 - Single instance per user session; starting a second copy is refused
 - Optional autostart through a scheduled task
@@ -161,7 +161,6 @@ tun-start-mode = off
 system-proxy-auto = 0
 ; Selector menu layout: "auto", "flat" or "nested"
 selector-menu-layout = auto
-selector-persist = 0
 ; Optional: write a log file (relative paths are resolved against the program folder)
 ; log-file = sing-box-go.log
 ```
@@ -173,15 +172,14 @@ selector-persist = 0
 | `tun-start-mode` | TUN state used only on the very first launch: `off` (default) or `on`. Later launches use the remembered state. |
 | `system-proxy-auto` | System proxy state used only on the very first launch: `1` enabled, `0` disabled (default). |
 | `selector-menu-layout` | Node menu layout: `auto` decides by item count, `flat` shows each selector as a disabled header with checkable items below, `nested` uses submenus. |
-| `selector-persist` | `1` restores the last selected outbound on the next launch and also remembers choices made from outside the app (for example from the dashboard); `0` (default) starts from the config `default` and does not remember choices between launches (a program self-restart still keeps the current selection). |
 | `log-file` | Optional log file path. Relative paths are resolved against the program folder. Empty disables logging. |
 
 The settings dialog edits `sb-dir`, `sb-config-file` and `selector-menu-layout`. Saving a different core directory or
 config file restarts the program automatically.
 
-Note: sing-box itself also remembers selector choices when `experimental.cache_file.enabled` is set in the config. In
-that case `selector-persist = 0` cannot force the config `default`; the core restores its own cached choice. The option
-controls only the program's own state and whether it re-applies that state at startup.
+Selector choices are not stored by this program. Whether they survive a restart is decided by the core: with
+`experimental.cache_file.enabled`, sing-box restores the last selection itself; without it, selectors start from the
+config `default`.
 
 ### State file
 
@@ -189,8 +187,6 @@ Runtime state is kept in `sing-box-go.state.json` next to the executable:
 
 - `tun` — whether TUN was active on the last run
 - `system-proxy` — whether the system proxy was enabled on the last run
-- `selectors` — the last selected outbound for each selector (restored on the next launch when
-  `selector-persist = 1`)
 
 Delete this file to fall back to `tun-start-mode` and `system-proxy-auto`.
 
@@ -263,6 +259,8 @@ executable has no runtime dependencies beyond the standard Windows system librar
 ## Limitations
 
 - Only one config file at a time; there is no profile switching in the UI.
+- Selector choices are not remembered by the program; enable `experimental.cache_file` in the sing-box config if you
+  want them restored after a restart.
 - TUN mode requires an elevated process and a `tun` inbound.
 - A remote BPF config update does not restart the running core.
 - The program does not modify the sing-box config file; in-memory changes (TUN removal, generated Clash API) are
