@@ -416,7 +416,14 @@ func (d *drover) postCanClose() {
 func (d *drover) destroy() {
 	d.mu.Lock()
 	d.destroying = true
+	alreadyRequested := d.shutdownRequested
 	d.mu.Unlock()
+
+	// Shutdown workers are already running (normal exit or the close
+	// watchdog); waiting here could hang the process indefinitely.
+	if alreadyRequested {
+		return
+	}
 	d.stopForShutdown()
 }
 

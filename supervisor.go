@@ -21,10 +21,16 @@ import (
 )
 
 const (
-	maxCaptureBytes       = 8 * 1024
-	readerDrainTimeout    = 5 * time.Second
-	postKillWait          = time.Second
-	gracefulStopTimeout   = 10 * time.Second
+	maxCaptureBytes     = 8 * 1024
+	readerDrainTimeout  = 5 * time.Second
+	postKillWait        = time.Second
+	gracefulStopTimeout = 10 * time.Second
+
+	// Application exit uses a shorter budget: nobody consumes the captured
+	// output anymore, and a slow stop only delays the process termination.
+	exitStopTimeout  = 3 * time.Second
+	exitDrainTimeout = time.Second
+
 	apiCheckDelay         = 500 * time.Millisecond
 	apiCheckInterval      = 500 * time.Millisecond
 	apiCheckTimeout       = 60 * time.Second
@@ -107,6 +113,9 @@ type coreSupervisor struct {
 	stopOnce sync.Once
 
 	state int32
+	// Set when the application is exiting, so the core gets a shorter
+	// graceful-stop budget than an in-app restart.
+	exiting int32
 
 	job       windows.Handle
 	cmd       *exec.Cmd
@@ -148,19 +157,34 @@ func (s *coreSupervisor) run() {
 	defer ticker.Stop()
 
 	for {
+		// Check the stop signal first so a queued command cannot delay an
+		// application exit.
+		if s.stopping() {
+			s.log("Supervisor stopping...")
+			s.stopGraceful()
+			s.log("Supervisor stopped.")
+			return
+		}
+
 		s.checkProcessStatus()
 		s.checkAPIStatus()
 
 		select {
 		case <-s.stopCh:
-			s.log("Supervisor stopping...")
-			s.stopGraceful()
-			s.log("Supervisor stopped.")
-			return
+			// Handled at the top of the next iteration.
 		case cmd := <-s.commands:
 			s.handleCommand(cmd)
 		case <-ticker.C:
 		}
+	}
+}
+
+func (s *coreSupervisor) stopping() bool {
+	select {
+	case <-s.stopCh:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -194,8 +218,16 @@ func (s *coreSupervisor) post(cmd coreCommand) bool {
 }
 
 func (s *coreSupervisor) stop() {
+	atomic.StoreInt32(&s.exiting, 1)
 	s.stopOnce.Do(func() { close(s.stopCh) })
 	<-s.done
+}
+
+func (s *coreSupervisor) stopTimeouts() (graceful, drain time.Duration) {
+	if atomic.LoadInt32(&s.exiting) != 0 {
+		return exitStopTimeout, exitDrainTimeout
+	}
+	return gracefulStopTimeout, readerDrainTimeout
 }
 
 func (s *coreSupervisor) handleCommand(cmd coreCommand) {
@@ -325,42 +357,57 @@ func (s *coreSupervisor) startProcess(configJSON string) error {
 
 func (s *coreSupervisor) sendGracefulSignal(processID uint32) bool {
 	pFreeConsole.Call()
-	if r, _, _ := pAttachConsole.Call(uintptr(processID)); r == 0 {
+	if r, _, err := pAttachConsole.Call(uintptr(processID)); r == 0 {
+		s.log(strings.TrimSpace("AttachConsole failed. " + err.Error()))
 		return false
 	}
 	defer pFreeConsole.Call()
 
 	pSetConsoleCtrlHandler.Call(0, 1)
-	sent := windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, processID) == nil
+	err := windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, processID)
 	time.Sleep(10 * time.Millisecond)
 	pSetConsoleCtrlHandler.Call(0, 0)
-	return sent
+	if err != nil {
+		s.log(strings.TrimSpace("GenerateConsoleCtrlEvent failed. " + err.Error()))
+		return false
+	}
+	return true
 }
 
 func (s *coreSupervisor) stopGraceful() {
 	if s.cmd == nil {
 		return
 	}
+	gracefulTimeout, _ := s.stopTimeouts()
+	started := time.Now()
 	s.setStateAndNotify(csStopping, "")
 
 	kill := true
-	if s.sendGracefulSignal(s.processID) {
+	sent := s.sendGracefulSignal(s.processID)
+	if sent {
 		s.log("Graceful shutdown signal sent.")
 		select {
 		case <-s.waitCh:
 			kill = false
-			s.log("Graceful shutdown complete.")
-		case <-time.After(gracefulStopTimeout):
+		case <-time.After(gracefulTimeout):
 		}
 	}
 
+	elapsed := time.Since(started).Round(time.Millisecond)
 	if kill {
-		s.log("Graceful shutdown timeout, forcing termination.")
+		if sent {
+			s.log(fmt.Sprintf("Graceful shutdown timed out after %s, forcing termination.", elapsed))
+		} else {
+			s.log("Graceful shutdown signal could not be delivered, forcing termination.")
+		}
 		_ = s.cmd.Process.Kill()
 		select {
 		case <-s.waitCh:
 		case <-time.After(postKillWait):
+			s.log("Process did not report exit after termination.")
 		}
+	} else {
+		s.log(fmt.Sprintf("Graceful shutdown complete in %s.", elapsed))
 	}
 
 	s.cleanupProcess()
@@ -395,7 +442,8 @@ func (s *coreSupervisor) cleanupProcess() {
 	}
 
 	if s.reader != nil {
-		output, drained := s.reader.drain(readerDrainTimeout)
+		_, drainTimeout := s.stopTimeouts()
+		output, drained := s.reader.drain(drainTimeout)
 		s.lastOut = output
 		if !drained {
 			s.log("Output reader still blocked; leaking it to keep supervisor responsive.")

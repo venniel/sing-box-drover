@@ -6,7 +6,12 @@ import (
 	"runtime"
 )
 
-const appTitle = "sing-box-go"
+const (
+	appTitle = "sing-box-go"
+
+	// Outwait the old instance's graceful core stop (max ~5s) on restart.
+	restartHandoffTimeoutMs = 15000
+)
 
 func main() {
 	runtime.LockOSThread()
@@ -19,7 +24,7 @@ func main() {
 
 	flags := parseAppFlags(os.Args[1:])
 
-	if !acquireSingleInstance("SingBoxGo_SingleInstance_Mutex", flags.has(afRestart), 10000) {
+	if !acquireSingleInstance("SingBoxGo_SingleInstance_Mutex", flags.has(afRestart), restartHandoffTimeoutMs) {
 		messageBox("Another instance of this application is already running.", appTitle, mbIconError)
 		return
 	}
@@ -64,6 +69,7 @@ func main() {
 	d.setDispatch(ui.post)
 	ui.initDrover()
 	ui.run()
+	ui.destroyWindow()
 	d.destroy()
 }
 

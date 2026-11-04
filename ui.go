@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -15,6 +16,10 @@ const (
 	mainWindowClass = "sing-box-go-main"
 	wmAppDispatch   = wmApp + 2
 	trayIconID      = 1
+
+	// The core gets up to ~16s to stop gracefully; force the exit afterwards
+	// so a stuck supervisor cannot leave an invisible process behind.
+	shutdownWatchdogDelay = 30 * time.Second
 
 	ninBalloonUserClick = 0x0405
 
@@ -213,7 +218,9 @@ func (u *mainUI) drainPosted() {
 func (u *mainUI) handleMessage(hwnd, msg, wparam, lparam uintptr) uintptr {
 	if u.taskbarCreated != 0 && msg == uintptr(u.taskbarCreated) {
 		u.trayAdded = false
-		u.addTrayIcon()
+		if !u.closePending {
+			u.addTrayIcon()
+		}
 		return 0
 	}
 
@@ -304,6 +311,13 @@ func (u *mainUI) addTrayIcon() {
 
 	r, _, _ := pShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
 	if r == 0 {
+		// Explorer may still hold a previous icon for this window after a
+		// taskbar restart, which makes NIM_ADD fail. Clear it and retry so the
+		// icon and u.trayAdded never disagree.
+		pShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
+		r, _, _ = pShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
+	}
+	if r == 0 {
 		return
 	}
 	u.trayAdded = true
@@ -330,7 +344,7 @@ func (u *mainUI) updateTrayIcon() {
 }
 
 func (u *mainUI) removeTrayIcon() {
-	if !u.trayAdded {
+	if u.hwnd == 0 || !u.trayAdded {
 		return
 	}
 
@@ -338,7 +352,15 @@ func (u *mainUI) removeTrayIcon() {
 	nid.CbSize = uint32(unsafe.Sizeof(nid))
 	nid.HWnd = u.hwnd
 	nid.UID = trayIconID
-	pShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
+	for attempt := 0; ; attempt++ {
+		r, _, _ := pShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
+		if r != 0 || attempt >= 2 {
+			break
+		}
+		// The shell rejects deletion while it is busy; retry briefly so the
+		// icon is not left behind once the process is gone.
+		time.Sleep(50 * time.Millisecond)
+	}
 	runtime.KeepAlive(&nid)
 	u.trayAdded = false
 }
@@ -862,7 +884,11 @@ func (u *mainUI) handleClose() {
 	if u.isSystemProxyActive {
 		u.toggleSystemProxy(false, false, false)
 	}
-	u.updateTrayIcon()
+
+	// Drop the icon before the core stops: Explorer keeps stale icons when the
+	// owning window disappears mid-shutdown.
+	u.removeTrayIcon()
+	u.startShutdownWatchdog()
 
 	if u.d == nil || u.d.shutdown() {
 		pDestroyWindow.Call(u.hwnd)
@@ -877,10 +903,31 @@ func (u *mainUI) endSession() {
 	if u.isSystemProxyActive {
 		u.toggleSystemProxy(false, false, false)
 	}
+	u.removeTrayIcon()
 	if u.d != nil {
-		u.d.stopForShutdown()
+		// Best effort only: blocking here can trigger the "app is preventing
+		// shutdown" prompt. The job object kills the core when this process
+		// goes away.
+		u.d.shutdown()
 	}
-	u.updateTrayIcon()
+}
+
+func (u *mainUI) startShutdownWatchdog() {
+	time.AfterFunc(shutdownWatchdogDelay, func() {
+		u.post(func() { u.destroyWindow() })
+	})
+}
+
+// destroyWindow is idempotent; WM_DESTROY removes the tray icon and posts the
+// quit message.
+func (u *mainUI) destroyWindow() {
+	if u.hwnd == 0 {
+		return
+	}
+	if r, _, _ := pIsWindow.Call(u.hwnd); r == 0 {
+		return
+	}
+	pDestroyWindow.Call(u.hwnd)
 }
 
 // --- Shell helpers -------------------------------------------------------
