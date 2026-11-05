@@ -124,15 +124,10 @@ const (
 )
 
 const (
-	ofnFileMustExist    = 0x00001000
-	ofnPathMustExist    = 0x00000800
-	ofnExplorer         = 0x00080000
-	ofnNoChangeDir      = 0x00000008
-	bifReturnOnlyFSDirs = 0x00000001
-	bifEditBox          = 0x00000010
-	bifNewDialogStyle   = 0x00000040
-	bffmInitialized     = 0x00000001
-	bffmSetSelection    = 0x00000467
+	ofnFileMustExist = 0x00001000
+	ofnPathMustExist = 0x00000800
+	ofnExplorer      = 0x00080000
+	ofnNoChangeDir   = 0x00000008
 )
 
 const (
@@ -221,17 +216,6 @@ type notifyIconData struct {
 	DwInfoFlags      uint32
 	GuidItem         windows.GUID
 	HBalloonIcon     uintptr
-}
-
-type browseInfo struct {
-	HwndOwner      uintptr
-	PidlRoot       uintptr
-	PszDisplayName *uint16
-	LpszTitle      *uint16
-	UlFlags        uint32
-	Lpfn           uintptr
-	LParam         uintptr
-	IImage         int32
 }
 
 type openFileName struct {
@@ -395,10 +379,8 @@ var (
 	pReadFile              = kernel32.NewProc("ReadFile")
 	pWriteFile             = kernel32.NewProc("WriteFile")
 
-	pShellNotifyIconW    = shell32.NewProc("Shell_NotifyIconW")
-	pSHBrowseForFolder   = shell32.NewProc("SHBrowseForFolderW")
-	pSHGetPathFromIDList = shell32.NewProc("SHGetPathFromIDListW")
-	pShellExecuteExW     = shell32.NewProc("ShellExecuteExW")
+	pShellNotifyIconW = shell32.NewProc("Shell_NotifyIconW")
+	pShellExecuteExW  = shell32.NewProc("ShellExecuteExW")
 
 	pGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
 
@@ -554,7 +536,6 @@ var (
 	pOleInitialize    = ole32.NewProc("OleInitialize")
 	pOleUninitialize  = ole32.NewProc("OleUninitialize")
 	pCoCreateInstance = ole32.NewProc("CoCreateInstance")
-	pCoTaskMemFree    = ole32.NewProc("CoTaskMemFree")
 	pSetBkMode        = gdi32.NewProc("SetBkMode")
 	pSetTextColor     = gdi32.NewProc("SetTextColor")
 )

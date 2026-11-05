@@ -11,8 +11,8 @@ func TestLoadOptionsDefaults(t *testing.T) {
 	dir := t.TempDir()
 	opts := loadOptions(filepath.Join(dir, optionsFilename))
 
-	if opts.SBDir != dir+string(os.PathSeparator) {
-		t.Errorf("SBDir = %q, want %q", opts.SBDir, dir+string(os.PathSeparator))
+	if want := filepath.Join(dir, "sing-box.exe"); opts.SBExe != want {
+		t.Errorf("SBExe = %q, want %q", opts.SBExe, want)
 	}
 	if opts.SBConfigFile != "config.json" {
 		t.Errorf("SBConfigFile = %q, want config.json", opts.SBConfigFile)
@@ -32,7 +32,7 @@ func TestLoadOptionsValues(t *testing.T) {
 	dir := t.TempDir()
 	ini := filepath.Join(dir, optionsFilename)
 	content := "[" + optionsSection + "]\r\n" +
-		"sb-dir = core\r\n" +
+		"sb-exe = core\\sing-box.exe\r\n" +
 		"sb-config-file = profile.json\r\n" +
 		"tun-start-mode = on\r\n" +
 		"system-proxy-auto = 1\r\n" +
@@ -43,8 +43,8 @@ func TestLoadOptionsValues(t *testing.T) {
 	}
 
 	opts := loadOptions(ini)
-	if opts.SBDir != "core"+string(os.PathSeparator) {
-		t.Errorf("SBDir = %q, relative paths are kept as-is", opts.SBDir)
+	if want := filepath.Join(dir, "core", "sing-box.exe"); opts.SBExe != want {
+		t.Errorf("SBExe = %q, want %q", opts.SBExe, want)
 	}
 	if opts.SBConfigFile != "profile.json" {
 		t.Errorf("SBConfigFile = %q", opts.SBConfigFile)
@@ -60,6 +60,36 @@ func TestLoadOptionsValues(t *testing.T) {
 	}
 	if opts.LogFile != filepath.Join(dir, "drover.log") {
 		t.Errorf("LogFile = %q", opts.LogFile)
+	}
+}
+
+func TestLoadOptionsLegacyCoreDir(t *testing.T) {
+	dir := t.TempDir()
+	ini := filepath.Join(dir, optionsFilename)
+	content := "[" + optionsSection + "]\r\nsb-dir = core\r\n"
+	if err := os.WriteFile(ini, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := loadOptions(ini)
+	if want := "core" + string(os.PathSeparator) + "sing-box.exe"; opts.SBExe != want {
+		t.Errorf("SBExe = %q, want %q (legacy sb-dir)", opts.SBExe, want)
+	}
+}
+
+func TestLoadOptionsCoreExeWinsOverLegacyDir(t *testing.T) {
+	dir := t.TempDir()
+	ini := filepath.Join(dir, optionsFilename)
+	content := "[" + optionsSection + "]\r\n" +
+		"sb-exe = new\\sing-box.exe\r\n" +
+		"sb-dir = old\r\n"
+	if err := os.WriteFile(ini, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := loadOptions(ini)
+	if want := filepath.Join(dir, "new", "sing-box.exe"); opts.SBExe != want {
+		t.Errorf("SBExe = %q, want %q", opts.SBExe, want)
 	}
 }
 
@@ -88,7 +118,7 @@ func TestLoadOptionsRelativeConfigResolution(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "config.json")); err != nil {
 		t.Fatal(err)
 	}
-	iniText := "[" + optionsSection + "]\nsb-dir = " + coreDir + "\nsb-config-file = config.json\n"
+	iniText := "[" + optionsSection + "]\nsb-exe = " + filepath.Join(coreDir, "sing-box.exe") + "\nsb-config-file = config.json\n"
 	if err := os.WriteFile(ini, []byte(iniText), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +133,7 @@ func TestSaveOptionsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	ini := filepath.Join(dir, optionsFilename)
 	original := "\uFEFF; keep me\r\n[" + optionsSection + "]\r\n" +
-		"sb-dir = old\r\n" +
+		"sb-exe = old\\sing-box.exe\r\n" +
 		"sb-config-file = old.json\r\n" +
 		"selector-menu-layout = auto\r\n" +
 		"system-proxy-auto = 1\r\n"
@@ -111,8 +141,8 @@ func TestSaveOptionsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coreDir := filepath.Join(dir, "core") + string(os.PathSeparator)
-	if err := saveOptions(ini, coreDir, "new.json", smlFlat); err != nil {
+	coreExe := filepath.Join(dir, "core", "sing-box.exe")
+	if err := saveOptions(ini, coreExe, "new.json", smlFlat); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,8 +164,8 @@ func TestSaveOptionsRoundTrip(t *testing.T) {
 	}
 
 	opts := loadOptions(ini)
-	if opts.SBDir != coreDir {
-		t.Errorf("SBDir = %q, want %q", opts.SBDir, coreDir)
+	if opts.SBExe != coreExe {
+		t.Errorf("SBExe = %q, want %q", opts.SBExe, coreExe)
 	}
 	if opts.SBConfigFile != "new.json" {
 		t.Errorf("SBConfigFile = %q", opts.SBConfigFile)
@@ -145,6 +175,49 @@ func TestSaveOptionsRoundTrip(t *testing.T) {
 	}
 	if !opts.SystemProxyAuto {
 		t.Error("unrelated settings should survive saveOptions")
+	}
+}
+
+func TestSaveToggleStates(t *testing.T) {
+	dir := t.TempDir()
+	ini := filepath.Join(dir, optionsFilename)
+	original := "; keep me\r\n[" + optionsSection + "]\r\n" +
+		"sb-dir = core\r\n" +
+		"tun-start-mode = off\r\n" +
+		"system-proxy-auto = 0\r\n"
+	if err := os.WriteFile(ini, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := saveTunState(ini, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveSystemProxyState(ini, true); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := loadOptions(ini)
+	if opts.TunStartMode != tsmOn {
+		t.Errorf("TunStartMode = %v, want on", opts.TunStartMode)
+	}
+	if !opts.SystemProxyAuto {
+		t.Error("SystemProxyAuto should be true")
+	}
+
+	if err := saveTunState(ini, false); err != nil {
+		t.Fatal(err)
+	}
+	opts = loadOptions(ini)
+	if opts.TunStartMode != tsmOff {
+		t.Errorf("TunStartMode = %v, want off", opts.TunStartMode)
+	}
+	if !opts.SystemProxyAuto {
+		t.Error("saving the TUN state must not change the system proxy state")
+	}
+
+	lines, _, ok := readTextLines(ini)
+	if !ok || !strings.Contains(strings.Join(lines, "\n"), "; keep me") {
+		t.Error("comments should survive toggle saves")
 	}
 }
 

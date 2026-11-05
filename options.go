@@ -29,7 +29,7 @@ const (
 )
 
 type droverOptions struct {
-	SBDir              string
+	SBExe              string
 	SBConfigFile       string
 	SystemProxyAuto    bool
 	TunStartMode       tunStartMode
@@ -40,7 +40,7 @@ type droverOptions struct {
 func loadOptions(filename string) droverOptions {
 	currentDir := filepath.Dir(filename) + string(os.PathSeparator)
 	opts := droverOptions{
-		SBDir:              currentDir,
+		SBExe:              currentDir + "sing-box.exe",
 		SBConfigFile:       "config.json",
 		SystemProxyAuto:    false,
 		TunStartMode:       tsmOff,
@@ -52,19 +52,22 @@ func loadOptions(filename string) droverOptions {
 		return opts
 	}
 
-	if value, found := iniGet(lines, optionsSection, "sb-dir"); found {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			opts.SBDir = currentDir
+	if value, found := iniGet(lines, optionsSection, "sb-exe"); found {
+		opts.SBExe = resolveCoreExe(value, currentDir)
+	} else if value, found := iniGet(lines, optionsSection, "sb-dir"); found {
+		// Older configs store the core folder instead of the executable.
+		if value = strings.TrimSpace(value); value == "" {
+			opts.SBExe = currentDir + "sing-box.exe"
 		} else {
-			opts.SBDir = includeTrailingPathDelimiter(value)
+			opts.SBExe = includeTrailingPathDelimiter(value) + "sing-box.exe"
 		}
 	}
 
 	if value, found := iniGet(lines, optionsSection, "sb-config-file"); found {
 		if !strings.Contains(value, ":") {
 			base := value
-			for _, candidate := range []string{currentDir + base, opts.SBDir + base} {
+			coreDir := includeTrailingPathDelimiter(filepath.Dir(opts.SBExe))
+			for _, candidate := range []string{currentDir + base, coreDir + base} {
 				if fileExists(candidate) {
 					value = candidate
 					break
@@ -93,15 +96,51 @@ func loadOptions(filename string) droverOptions {
 	return opts
 }
 
-func saveOptions(filename, sbDir, sbConfigFile string, layout selectorMenuLayout) error {
+func resolveCoreExe(value, baseDir string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return baseDir + "sing-box.exe"
+	}
+	if isRootedPath(value) {
+		return filepath.Clean(value)
+	}
+	return filepath.Join(baseDir, value)
+}
+
+func saveOptions(filename, sbExe, sbConfigFile string, layout selectorMenuLayout) error {
+	return updateOptionsFile(filename, func(lines []string) []string {
+		lines = iniSet(lines, optionsSection, "sb-exe", sbExe)
+		lines = iniSet(lines, optionsSection, "sb-config-file", sbConfigFile)
+		return iniSet(lines, optionsSection, "selector-menu-layout", layoutToValue(layout))
+	})
+}
+
+func saveTunState(filename string, enabled bool) error {
+	value := "off"
+	if enabled {
+		value = "on"
+	}
+	return updateOptionsFile(filename, func(lines []string) []string {
+		return iniSet(lines, optionsSection, "tun-start-mode", value)
+	})
+}
+
+func saveSystemProxyState(filename string, enabled bool) error {
+	value := "0"
+	if enabled {
+		value = "1"
+	}
+	return updateOptionsFile(filename, func(lines []string) []string {
+		return iniSet(lines, optionsSection, "system-proxy-auto", value)
+	})
+}
+
+func updateOptionsFile(filename string, update func([]string) []string) error {
 	lines, hadBOM, _ := readTextLines(filename)
 	if lines == nil {
 		lines = []string{}
 	}
-
-	lines = iniSet(lines, optionsSection, "sb-dir", sbDir)
-	lines = iniSet(lines, optionsSection, "sb-config-file", sbConfigFile)
-	lines = iniSet(lines, optionsSection, "selector-menu-layout", layoutToValue(layout))
+	lines = update(lines)
 
 	text := strings.Join(lines, "\r\n")
 	if !strings.HasSuffix(text, "\r\n") {

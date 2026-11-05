@@ -26,6 +26,10 @@ const (
 	postKillWait        = time.Second
 	gracefulStopTimeout = 10 * time.Second
 
+	// The core runs with <core dir>\config as its working directory, so
+	// cache.db and relative config paths (external_ui, ...) stay there.
+	coreWorkDirName = "config"
+
 	// Application exit uses a shorter budget: nobody consumes the captured
 	// output anymore, and a slow stop only delays the process termination.
 	exitStopTimeout  = 3 * time.Second
@@ -263,6 +267,18 @@ func (s *coreSupervisor) doStart(configJSON string) {
 	s.initAPICheck()
 }
 
+// workDir returns the core's working directory, creating it when missing.
+// Falls back to the executable folder if the folder cannot be created.
+func (s *coreSupervisor) workDir() string {
+	coreDir := filepath.Dir(s.exePath)
+	workDir := filepath.Join(coreDir, coreWorkDirName)
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		s.log(strings.TrimSpace("Failed to create core data directory, using the core directory. " + err.Error()))
+		return coreDir
+	}
+	return workDir
+}
+
 func (s *coreSupervisor) startProcess(configJSON string) error {
 	if !fileExists(s.exePath) {
 		return errors.New("sing-box executable not found.")
@@ -298,7 +314,7 @@ func (s *coreSupervisor) startProcess(configJSON string) error {
 	}
 
 	cmd := exec.Command(s.exePath, "--disable-color", "run", "-c", "stdin")
-	cmd.Dir = filepath.Dir(s.exePath)
+	cmd.Dir = s.workDir()
 	cmd.Stdin = inR
 	cmd.Stdout = outW
 	cmd.Stderr = outW

@@ -8,12 +8,6 @@ import (
 	"sync"
 )
 
-const (
-	stateFilename       = "sing-box-go.state.json"
-	stateKeyTun         = "tun"
-	stateKeySystemProxy = "system-proxy"
-)
-
 type droverEventKind int
 
 const (
@@ -34,7 +28,7 @@ type drover struct {
 	updater      *configUpdater
 	cli          *singBoxCLI
 	logger       *logger
-	state        *appState
+	optionsFile  string
 	options      droverOptions
 	configSource configSource
 	sbConfig     singBoxConfig
@@ -65,7 +59,8 @@ type drover struct {
 func newDrover(flags appFlags) (*drover, error) {
 	d := &drover{}
 	d.currentProcessDir = includeTrailingPathDelimiter(filepath.Dir(currentExecutablePath()))
-	d.options = loadOptions(d.currentProcessDir + optionsFilename)
+	d.optionsFile = d.currentProcessDir + optionsFilename
+	d.options = loadOptions(d.optionsFile)
 	d.logger = newLogger(d.options.LogFile)
 
 	fail := func(err error) (*drover, error) {
@@ -88,22 +83,14 @@ func newDrover(flags appFlags) (*drover, error) {
 	d.sbConfig = cfg
 	d.selectors = append([]configSelector(nil), cfg.Selectors...)
 
-	d.state = newAppState(d.currentProcessDir + stateFilename)
-
-	if wantsTun, ok := d.state.getBool(stateKeyTun); ok {
-		d.wantsTun = wantsTun
-	} else {
-		d.wantsTun = cfg.HasTunInbound && d.options.TunStartMode == tsmOn
-		d.storeTun(d.wantsTun)
-	}
-
+	d.wantsTun = d.options.TunStartMode == tsmOn
 	if flags.has(afTun) {
 		d.wantsTun = true
 	}
 
 	d.isElevated = isProcessElevated()
 
-	corePath := d.options.SBDir + "sing-box.exe"
+	corePath := d.options.SBExe
 	if !fileExists(corePath) {
 		return fail(errors.New("sing-box executable not found."))
 	}
@@ -232,19 +219,24 @@ func (d *drover) needsElevation() bool {
 	return d.wantsTun && d.sbConfig.HasTunInbound && !d.isElevated
 }
 
-func (d *drover) storedSystemProxy() (bool, bool) {
-	return d.state.getBool(stateKeySystemProxy)
+func (d *drover) systemProxyEnabled() bool {
+	return d.options.SystemProxyAuto
 }
 
 func (d *drover) storeSystemProxy(value bool) {
-	if err := d.state.setBool(stateKeySystemProxy, value); err != nil {
+	d.options.SystemProxyAuto = value
+	if err := saveSystemProxyState(d.optionsFile, value); err != nil {
 		d.log(strings.TrimSpace("Failed to persist system proxy state. " + err.Error()))
 	}
 }
 
 func (d *drover) storeTun(value bool) {
 	d.wantsTun = value
-	if err := d.state.setBool(stateKeyTun, value); err != nil {
+	d.options.TunStartMode = tsmOff
+	if value {
+		d.options.TunStartMode = tsmOn
+	}
+	if err := saveTunState(d.optionsFile, value); err != nil {
 		d.log(strings.TrimSpace("Failed to persist TUN state. " + err.Error()))
 	}
 }

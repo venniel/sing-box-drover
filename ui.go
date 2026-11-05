@@ -158,12 +158,7 @@ func (u *mainUI) initDrover() {
 	u.d.setNotifyHandle(u.hwnd)
 	u.isTunActive = u.d.isTunActive
 
-	enabled, ok := u.d.storedSystemProxy()
-	if !ok {
-		enabled = u.d.options.SystemProxyAuto
-		u.d.storeSystemProxy(enabled)
-	}
-	if enabled {
+	if u.d.systemProxyEnabled() {
 		u.toggleSystemProxy(true, false, false)
 	}
 

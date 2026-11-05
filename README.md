@@ -52,8 +52,8 @@ becoming another all-in-one GUI client.
 
 2. Put `sing-box-go.exe` in any folder. The settings dialog creates `sing-box-go.ini` when you save for the first
    time.
-3. Put `sing-box.exe` into the same folder, or point `sb-dir` at its folder.
-4. Run `sing-box-go.exe`. On the first launch the settings dialog opens; choose the core directory and the config
+3. Put `sing-box.exe` next to `sing-box-go.exe`, or point `sb-exe` at the executable's full path.
+4. Run `sing-box-go.exe`. On the first launch the settings dialog opens; choose the core executable and the config
    file. After saving, a tray icon appears and the core starts.
 
 The tray menu and the settings dialog are in Chinese.
@@ -155,7 +155,8 @@ Settings are stored in `sing-box-go.ini` next to the executable:
 
 ```ini
 [sing-box-go]
-sb-dir =
+; Full path to sing-box.exe. Empty means the program folder.
+sb-exe =
 sb-config-file = config.json
 tun-start-mode = off
 system-proxy-auto = 0
@@ -167,28 +168,28 @@ selector-menu-layout = auto
 
 | Key | Description |
 | --- | --- |
-| `sb-dir` | Folder containing `sing-box.exe`. Empty means the folder with `sing-box-go.exe`. |
-| `sb-config-file` | sing-box config file (JSON or `.bpf`). A relative name is resolved against the program folder first, then `sb-dir`. |
-| `tun-start-mode` | TUN state used only on the very first launch: `off` (default) or `on`. Later launches use the remembered state. |
-| `system-proxy-auto` | System proxy state used only on the very first launch: `1` enabled, `0` disabled (default). |
+| `sb-exe` | Full path to the sing-box executable. A relative name is resolved against the program folder; empty means `sing-box.exe` next to `sing-box-go.exe`. |
+| `sb-config-file` | sing-box config file (JSON or `.bpf`). A relative name is resolved against the program folder first, then the core's folder. |
+| `tun-start-mode` | TUN switch state: `on` or `off` (default). Updated by the app whenever TUN is toggled. |
+| `system-proxy-auto` | System proxy switch state: `1` enabled, `0` disabled (default). Updated by the app whenever the proxy is toggled. |
 | `selector-menu-layout` | Node menu layout: `auto` decides by item count, `flat` shows each selector as a disabled header with checkable items below, `nested` uses submenus. |
 | `log-file` | Optional log file path. Relative paths are resolved against the program folder. Empty disables logging. |
 
-The settings dialog edits `sb-dir`, `sb-config-file` and `selector-menu-layout`. Saving a different core directory or
+Older versions stored the core folder as `sb-dir`; it is still read when `sb-exe` is absent.
+
+The settings dialog edits `sb-exe`, `sb-config-file` and `selector-menu-layout`. Saving a different core executable or
 config file restarts the program automatically.
+
+sing-box runs with `<core folder>\config` as its working directory (created automatically). Relative paths from the
+config, including `cache.db` and `external_ui`, therefore resolve inside that folder — for example put the dashboard
+files in `<core folder>\config\ui` when the config uses `"external_ui": "ui"`.
 
 Selector choices are not stored by this program. Whether they survive a restart is decided by the core: with
 `experimental.cache_file.enabled`, sing-box restores the last selection itself; without it, selectors start from the
 config `default`.
 
-### State file
-
-Runtime state is kept in `sing-box-go.state.json` next to the executable:
-
-- `tun` — whether TUN was active on the last run
-- `system-proxy` — whether the system proxy was enabled on the last run
-
-Delete this file to fall back to `tun-start-mode` and `system-proxy-auto`.
+The TUN and system proxy switches are remembered in `sing-box-go.ini`. Older builds kept them in
+`sing-box-go.state.json`; that file is no longer read and can be deleted.
 
 ### Autostart
 
@@ -246,13 +247,13 @@ executable has no runtime dependencies beyond the standard Windows system librar
 | `ui.go` | Tray icon, context menu, system proxy and TUN actions, autostart, shutdown |
 | `settings.go` | Win32 settings dialog and file/folder pickers |
 | `win32.go` | Win32 bindings, structs, accessibility names, small helpers |
-| `drover.go` | Application state, selector/mode state, runtime persistence, shutdown |
+| `drover.go` | Application state, selector/mode state, remembered TUN/proxy switches, shutdown |
 | `supervisor.go` | Core process supervision (job object, stdin config, Clash API checks) |
 | `apiclient.go` | Minimal Clash API client |
 | `config.go` | Config parsing, requirement checks, in-memory TUN stripping, Clash API creation |
 | `bpf.go` | BPF profile encoding and decoding |
 | `configupdater.go` | Remote BPF profile updates |
-| `options.go`, `appstate.go` | INI options and JSON state file |
+| `options.go` | INI options, including the remembered TUN and system proxy switches |
 | `autostart.go`, `elevation.go`, `singleinstance.go` | Windows integration helpers |
 | `systemproxy.go`, `tuncleanup.go`, `singboxcli.go`, `logger.go` | System proxy, Wintun cleanup, core CLI helpers, logging |
 
