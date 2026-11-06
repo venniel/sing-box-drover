@@ -8,7 +8,7 @@ The goal is to keep the full power of a normal sing-box config while adding only
 becoming another all-in-one GUI client.
 
 - Uses the official `sing-box.exe` — nothing is embedded, nothing is bundled
-- One JSON or `.bpf` config, used as-is
+- One JSON config, used as-is
 - Native Win32 controls (no GUI toolkit) with explicit accessible names, so screen readers such as NVDA and
   争渡读屏 can navigate the tray menu and settings dialog
 - Small idle footprint: no periodic HTTP polling after startup; the Clash API is contacted at startup, when the
@@ -30,7 +30,6 @@ becoming another all-in-one GUI client.
     - **退出** (Quit) — gracefully stops the core and exits
 - The system proxy is restored on the next launch when it was left enabled, and is disabled on normal exit
 - TUN state is remembered across restarts; enabling TUN relaunches the program elevated (UAC)
-- Remote `.bpf` profiles can be updated automatically
 - Single instance per user session; starting a second copy is refused
 - Optional autostart through a scheduled task
 
@@ -169,7 +168,7 @@ selector-menu-layout = auto
 | Key | Description |
 | --- | --- |
 | `sb-exe` | Full path to the sing-box executable. A relative name is resolved against the program folder; empty means `sing-box.exe` next to `sing-box-go.exe`. |
-| `sb-config-file` | sing-box config file (JSON or `.bpf`). A relative name is resolved against the program folder first, then the core's folder. |
+| `sb-config-file` | sing-box config file (JSON). A relative name is resolved against the program folder first, then the core's folder. |
 | `tun-start-mode` | TUN switch state: `on` or `off` (default). Updated by the app whenever TUN is toggled. |
 | `system-proxy-auto` | System proxy switch state: `1` enabled, `0` disabled (default). Updated by the app whenever the proxy is toggled. |
 | `selector-menu-layout` | Node menu layout: `auto` decides by item count, `flat` shows each selector as a disabled header with checkable items below, `nested` uses submenus. |
@@ -208,22 +207,6 @@ These are mainly used internally when the program relaunches itself, but they ca
 | `-autostart-enable` | Create the autostart scheduled task. |
 | `-autostart-disable` | Remove the autostart scheduled task. |
 
-## BPF profiles
-
-Besides plain JSON, `sb-config-file` can point to a `.bpf` profile — the binary profile format used by the official
-sing-box clients (SFA for Android, SFI/SFM for Apple platforms).
-
-`.bpf` is not a documented public format; it is defined by the `libbox` sources in the sing-box repository. A file
-consists of a 1-byte message type, a 1-byte version and a gzip-compressed payload containing the profile name, type,
-JSON config and, for remote profiles, the URL, auto-update flag, interval and last-updated timestamp.
-
-For remote profiles with auto-update enabled, the program checks for a new config about one minute after launch and
-then at the profile's interval (at least every 15 minutes). The downloaded config is written back to the `.bpf` file.
-The running core is **not** restarted automatically; the new config takes effect on the next launch.
-
-To create or edit a `.bpf` profile in the browser, use
-[sing-box-bpf-editor](https://hdrover.github.io/sing-box-bpf-editor/) — it runs fully client-side.
-
 ## Building and testing
 
 Requirements:
@@ -251,11 +234,9 @@ executable has no runtime dependencies beyond the standard Windows system librar
 | `supervisor.go` | Core process supervision (job object, stdin config, Clash API checks) |
 | `apiclient.go` | Minimal Clash API client |
 | `config.go` | Config parsing, requirement checks, in-memory TUN stripping, Clash API creation |
-| `bpf.go` | BPF profile encoding and decoding |
-| `configupdater.go` | Remote BPF profile updates |
 | `options.go` | INI options, including the remembered TUN and system proxy switches |
 | `autostart.go`, `elevation.go`, `singleinstance.go` | Windows integration helpers |
-| `systemproxy.go`, `tuncleanup.go`, `singboxcli.go`, `logger.go` | System proxy, Wintun cleanup, core CLI helpers, logging |
+| `systemproxy.go`, `tuncleanup.go`, `logger.go` | System proxy, Wintun cleanup, logging |
 
 ## Limitations
 
@@ -263,6 +244,5 @@ executable has no runtime dependencies beyond the standard Windows system librar
 - Selector choices are not remembered by the program; enable `experimental.cache_file` in the sing-box config if you
   want them restored after a restart.
 - TUN mode requires an elevated process and a `tun` inbound.
-- A remote BPF config update does not restart the running core.
 - The program does not modify the sing-box config file; in-memory changes (TUN removal, generated Clash API) are
   per-run only.

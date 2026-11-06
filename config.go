@@ -11,13 +11,6 @@ import (
 	"strings"
 )
 
-type configSourceFormat int
-
-const (
-	csfJSON configSourceFormat = iota
-	csfBPF
-)
-
 type configSelector struct {
 	Name         string
 	Outbounds    []string
@@ -56,15 +49,6 @@ func (c clashAPIConfig) DashboardURL() string {
 	}
 	return base
 }
-
-type configSource struct {
-	FilePath   string
-	Format     configSourceFormat
-	JSONText   string
-	BpfProfile bpfProfile
-}
-
-func (s configSource) IsBpf() bool { return s.Format == csfBPF }
 
 type singBoxConfig struct {
 	ClashAPI       clashAPIConfig
@@ -156,31 +140,15 @@ func normalizeJSON(src string) string {
 	return b.String()
 }
 
-func readConfigSource(path string) (configSource, error) {
-	src := configSource{FilePath: path}
-
+func readConfigText(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return src, fmt.Errorf("Configuration file not found.")
+			return "", fmt.Errorf("Configuration file not found.")
 		}
-		return src, fmt.Errorf("Failed to read configuration file.")
+		return "", fmt.Errorf("Failed to read configuration file.")
 	}
-
-	if looksLikeBpfProfileData(data) {
-		profile, err := decodeBpfProfile(data)
-		if err != nil {
-			return src, err
-		}
-		src.Format = csfBPF
-		src.BpfProfile = profile
-		src.JSONText = profile.ConfigJSON
-		return src, nil
-	}
-
-	src.Format = csfJSON
-	src.JSONText = utf8TextFromBytes(data)
-	return src, nil
+	return utf8TextFromBytes(data), nil
 }
 
 func utf8TextFromBytes(data []byte) string {

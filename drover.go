@@ -23,15 +23,12 @@ type droverEvent struct {
 }
 
 type drover struct {
-	supervisor   *coreSupervisor
-	updater      *configUpdater
-	cli          *singBoxCLI
-	logger       *logger
-	optionsFile  string
-	options      droverOptions
-	configSource configSource
-	sbConfig     singBoxConfig
-	selectors    []configSelector
+	supervisor  *coreSupervisor
+	logger      *logger
+	optionsFile string
+	options     droverOptions
+	sbConfig    singBoxConfig
+	selectors   []configSelector
 
 	currentProcessDir string
 	isElevated        bool
@@ -65,18 +62,17 @@ func newDrover(flags appFlags) (*drover, error) {
 		return nil, err
 	}
 
-	source, err := readConfigSource(d.options.SBConfigFile)
+	jsonText, err := readConfigText(d.options.SBConfigFile)
 	if err != nil {
 		return fail(err)
 	}
-	cfg, err := readSingBoxConfig(source.JSONText)
+	cfg, err := readSingBoxConfig(jsonText)
 	if err != nil {
 		return fail(err)
 	}
 	if err := checkSingBoxConfig(cfg); err != nil {
 		return fail(err)
 	}
-	d.configSource = source
 	d.sbConfig = cfg
 	d.selectors = append([]configSelector(nil), cfg.Selectors...)
 
@@ -92,13 +88,8 @@ func newDrover(flags appFlags) (*drover, error) {
 		return fail(errors.New("sing-box executable not found."))
 	}
 
-	d.cli = newSingBoxCLI(corePath, d.logger)
 	d.supervisor = newCoreSupervisor(corePath, d.logger, cfg.ClashAPI, d.dispatchCoreEvent)
 	d.startCore(d.canUseTun() && d.wantsTun)
-
-	if source.IsBpf() && source.BpfProfile.IsRemote() && source.BpfProfile.AutoUpdate {
-		d.updater = newConfigUpdater(source, d.cli, d.logger)
-	}
 
 	return d, nil
 }
@@ -342,32 +333,14 @@ func (d *drover) stopForShutdown() {
 	if d.supervisor != nil {
 		d.supervisor.stop()
 	}
-	if d.updater != nil {
-		d.updater.stop()
-	}
 	d.completeShutdown()
 }
 
 func (d *drover) requestShutdownWorkers() {
-	var wg sync.WaitGroup
-
-	if d.supervisor != nil {
-		wg.Add(1)
-		go func() {
-			d.supervisor.stop()
-			wg.Done()
-		}()
-	}
-	if d.updater != nil {
-		wg.Add(1)
-		go func() {
-			d.updater.stop()
-			wg.Done()
-		}()
-	}
-
 	go func() {
-		wg.Wait()
+		if d.supervisor != nil {
+			d.supervisor.stop()
+		}
 		d.completeShutdown()
 	}()
 }
