@@ -157,7 +157,9 @@ func (s *coreSupervisor) run() {
 	defer close(s.done)
 	s.log("Supervisor started.")
 
-	ticker := time.NewTicker(200 * time.Millisecond)
+	// Drives the API readiness check only; process exits are received
+	// through waitCh below, without polling.
+	ticker := time.NewTicker(apiCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -170,7 +172,6 @@ func (s *coreSupervisor) run() {
 			return
 		}
 
-		s.checkProcessStatus()
 		s.checkAPIStatus()
 
 		select {
@@ -178,6 +179,9 @@ func (s *coreSupervisor) run() {
 			// Handled at the top of the next iteration.
 		case cmd := <-s.commands:
 			s.handleCommand(cmd)
+		case <-s.waitCh:
+			// nil while no process is running, so the case never fires then.
+			s.handleUnexpectedExit()
 		case <-ticker.C:
 		}
 	}
@@ -273,7 +277,7 @@ func (s *coreSupervisor) workDir() string {
 	coreDir := filepath.Dir(s.exePath)
 	workDir := filepath.Join(coreDir, coreWorkDirName)
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		s.log(strings.TrimSpace("Failed to create core data directory, using the core directory. " + err.Error()))
+		s.log("Failed to create core data directory, using the core directory. " + err.Error())
 		return coreDir
 	}
 	return workDir
@@ -374,7 +378,7 @@ func (s *coreSupervisor) startProcess(configJSON string) error {
 func (s *coreSupervisor) sendGracefulSignal(processID uint32) bool {
 	pFreeConsole.Call()
 	if r, _, err := pAttachConsole.Call(uintptr(processID)); r == 0 {
-		s.log(strings.TrimSpace("AttachConsole failed. " + err.Error()))
+		s.log("AttachConsole failed. " + err.Error())
 		return false
 	}
 	defer pFreeConsole.Call()
@@ -384,7 +388,7 @@ func (s *coreSupervisor) sendGracefulSignal(processID uint32) bool {
 	time.Sleep(10 * time.Millisecond)
 	pSetConsoleCtrlHandler.Call(0, 0)
 	if err != nil {
-		s.log(strings.TrimSpace("GenerateConsoleCtrlEvent failed. " + err.Error()))
+		s.log("GenerateConsoleCtrlEvent failed. " + err.Error())
 		return false
 	}
 	return true
@@ -430,17 +434,14 @@ func (s *coreSupervisor) stopGraceful() {
 	s.setStateAndNotify(csStopped, "")
 }
 
-func (s *coreSupervisor) checkProcessStatus() {
+// handleUnexpectedExit runs when the core exits on its own. cleanupProcess
+// clears waitCh, so a notification left over from a stopped run is ignored.
+func (s *coreSupervisor) handleUnexpectedExit() {
 	if s.cmd == nil {
 		return
 	}
-
-	select {
-	case <-s.waitCh:
-		s.cleanupProcess()
-		s.setStateAndNotify(csFailed, s.buildFailureMessage("sing-box process exited unexpectedly.", s.lastOut))
-	default:
-	}
+	s.cleanupProcess()
+	s.setStateAndNotify(csFailed, s.buildFailureMessage("sing-box process exited unexpectedly.", s.lastOut))
 }
 
 func (s *coreSupervisor) cleanupProcess() {
@@ -451,6 +452,7 @@ func (s *coreSupervisor) cleanupProcess() {
 
 	s.processID = 0
 	s.cmd = nil
+	s.waitCh = nil
 
 	if s.stdinW != nil {
 		_ = s.stdinW.Close()
@@ -511,7 +513,7 @@ func (s *coreSupervisor) checkAPIStatus() {
 func (s *coreSupervisor) doQueryConfig() {
 	text, err := s.api.request("GET", "/configs", "", time.Second)
 	if err != nil {
-		s.log(strings.TrimSpace("Config query failed. " + err.Error()))
+		s.log("Config query failed. " + err.Error())
 		return
 	}
 
@@ -534,7 +536,7 @@ func (s *coreSupervisor) doQueryConfig() {
 		event.Modes = modes
 	}
 
-	s.log(strings.TrimSpace(fmt.Sprintf("Clash mode: %s, available modes: %d.", event.Mode, len(event.Modes))))
+	s.log(fmt.Sprintf("Clash mode: %s, available modes: %d.", event.Mode, len(event.Modes)))
 	s.notifyEvent(event)
 }
 
@@ -547,21 +549,29 @@ func (s *coreSupervisor) doSetMode(mode string) {
 	s.notifyEvent(coreEvent{Kind: cekModeDone, Mode: mode})
 }
 
+// doQuerySelectorStates fetches every selector's active outbound in a single
+// request instead of one per selector, so a slow core cannot stall the
+// supervisor loop for N times the per-request timeout.
 func (s *coreSupervisor) doQuerySelectorStates(names []string, serial int) {
-	states := make(map[string]string, len(names))
-	for _, name := range names {
-		text, err := s.api.request("GET", "/proxies/"+url.PathEscape(name), "", selectorQueryTimeout)
-		if err != nil {
-			// Core is likely unavailable; keep the cached values.
-			break
-		}
-		var proxy struct {
+	text, err := s.api.request("GET", "/proxies", "", selectorQueryTimeout)
+	if err != nil {
+		// Core is likely unavailable; keep the cached values.
+		s.notifyEvent(coreEvent{Kind: cekSelectorStates, SelectorSerial: serial})
+		return
+	}
+
+	var resp struct {
+		Proxies map[string]struct {
 			Now string `json:"now"`
+		} `json:"proxies"`
+	}
+	states := make(map[string]string, len(names))
+	if err := json.Unmarshal([]byte(text), &resp); err == nil {
+		for _, name := range names {
+			if p, ok := resp.Proxies[name]; ok && p.Now != "" {
+				states[name] = p.Now
+			}
 		}
-		if err := json.Unmarshal([]byte(text), &proxy); err != nil || proxy.Now == "" {
-			continue
-		}
-		states[name] = proxy.Now
 	}
 	s.notifyEvent(coreEvent{Kind: cekSelectorStates, SelectorNow: states, SelectorSerial: serial})
 }
@@ -570,9 +580,9 @@ func (s *coreSupervisor) doSetSelectors(tasks []selectorTask, requestID int) {
 	hasError := false
 	for _, task := range tasks {
 		body, _ := json.Marshal(map[string]string{"name": task.Value})
-		if _, err := s.api.request("PUT", "/proxies/"+task.Name, string(body), time.Second); err != nil {
+		if _, err := s.api.request("PUT", "/proxies/"+url.PathEscape(task.Name), string(body), time.Second); err != nil {
 			hasError = true
-			s.log(strings.TrimSpace(fmt.Sprintf("Selector update failed for %q. %s", task.Name, err.Error())))
+			s.log(fmt.Sprintf("Selector update failed for %q. %s", task.Name, err.Error()))
 		}
 	}
 
@@ -583,7 +593,7 @@ func (s *coreSupervisor) doSetSelectors(tasks []selectorTask, requestID int) {
 	s.notifyEvent(coreEvent{Kind: cekSelectorDone, RequestID: requestID})
 
 	if _, err := s.api.request("DELETE", "/connections", "", connectionsFlushLimit); err != nil {
-		s.log(strings.TrimSpace("Connections flush failed. " + err.Error()))
+		s.log("Connections flush failed. " + err.Error())
 	}
 }
 

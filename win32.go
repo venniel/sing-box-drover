@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	wmCreate           = 0x0001
 	wmDestroy          = 0x0002
 	wmClose            = 0x0010
 	wmQueryEndSession  = 0x0011
@@ -25,7 +24,6 @@ const (
 	wmNull             = 0x0000
 	wmDpiChanged       = 0x02E0
 	wmAppTray          = wmApp + 1
-	wmAppEvent         = wmApp + 3
 	wmDroverCanClose   = wmApp + 501
 	eventSystemAlert   = 0x0002
 	eventObjectShow    = 0x8002
@@ -35,7 +33,6 @@ const (
 )
 
 const (
-	wsOverlapped    = 0x00000000
 	wsPopup         = 0x80000000
 	wsCaption       = 0x00C00000
 	wsSysMenu       = 0x00080000
@@ -44,12 +41,9 @@ const (
 	wsTabStop       = 0x00010000
 	wsBorder        = 0x00800000
 	wsClipChildren  = 0x02000000
-	wsClipSiblings  = 0x04000000
 	wsVScroll       = 0x00200000
 	wsExDlgModalFrm = 0x00000001
 	wsExAppWindow   = 0x00040000
-	wsExToolWindow  = 0x00000080
-	wsExClientEdge  = 0x00000200
 	wsExCtrlParent  = 0x00010000
 )
 
@@ -68,7 +62,6 @@ const (
 	cbAddString       = 0x0143
 	cbGetCurSel       = 0x0147
 	cbSetCurSel       = 0x014E
-	cbGetDroppedState = 0x0157
 	bnClicked         = 0
 	idOK              = 1
 	idCancel          = 2
@@ -81,8 +74,6 @@ const (
 	mfChecked    = 0x00000008
 	mfPopup      = 0x00000010
 	mfSeparator  = 0x00000800
-	mfByCommand  = 0x00000000
-	tpmLeftAlign = 0x0000
 	tpmRightBtn  = 0x0002
 	tpmReturnCmd = 0x0100
 )
@@ -97,9 +88,6 @@ const (
 	nifTip        = 0x00000004
 	nifInfo       = 0x00000010
 	nifShowTip    = 0x00000080
-	niifNone      = 0x00000000
-	niifInfo      = 0x00000001
-	niifWarning   = 0x00000002
 	niifError     = 0x00000003
 	notifyVer4    = 4
 	ninSelect     = 0x0400
@@ -107,19 +95,14 @@ const (
 )
 
 const (
-	imageIcon      = 1
-	lrLoadFromFile = 0x00000010
 	idiApplication = 32512
 	idcArrow       = 32512
 )
 
 const (
 	spiGetWorkArea = 0x0030
-	smCXScreen     = 0
-	smCYScreen     = 1
 	smCXSmIcon     = 49
 	smCYSmIcon     = 50
-	logPixelsX     = 88
 	dpiCtxPerMonV2 = ^uintptr(3) // (HANDLE)-4
 )
 
@@ -138,20 +121,6 @@ const (
 const (
 	swpNoZOrder   = 0x0004
 	swpNoActivate = 0x0010
-)
-
-const (
-	startfUseShowWindow = 0x00000001
-	startfUseStdHandles = 0x00000100
-	createNewConsole    = 0x00000010
-	createNoWindow      = 0x08000000
-	handleFlagInherit   = 0x00000001
-	waitObject0         = 0x00000000
-	waitTimeout         = 0x00000102
-	waitAbandoned       = 0x00000080
-	infinite            = 0xFFFFFFFF
-	errorAlreadyExists  = 183
-	errorBrokenPipe     = 109
 )
 
 const (
@@ -306,27 +275,22 @@ var (
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 	shell32  = windows.NewLazySystemDLL("shell32.dll")
 	comdlg32 = windows.NewLazySystemDLL("comdlg32.dll")
-	advapi32 = windows.NewLazySystemDLL("advapi32.dll")
 	setupapi = windows.NewLazySystemDLL("setupapi.dll")
 	cfgmgr32 = windows.NewLazySystemDLL("cfgmgr32.dll")
 	comctl32 = windows.NewLazySystemDLL("comctl32.dll")
 
 	pRegisterClassExW      = user32.NewProc("RegisterClassExW")
-	pUnregisterClassW      = user32.NewProc("UnregisterClassW")
 	pCreateWindowExW       = user32.NewProc("CreateWindowExW")
 	pDestroyWindow         = user32.NewProc("DestroyWindow")
 	pDefWindowProcW        = user32.NewProc("DefWindowProcW")
 	pShowWindow            = user32.NewProc("ShowWindow")
-	pUpdateWindow          = user32.NewProc("UpdateWindow")
 	pEnableWindow          = user32.NewProc("EnableWindow")
 	pIsWindow              = user32.NewProc("IsWindow")
 	pSetFocus              = user32.NewProc("SetFocus")
 	pGetFocus              = user32.NewProc("GetFocus")
 	pSetForegroundWindow   = user32.NewProc("SetForegroundWindow")
 	pBringWindowToTop      = user32.NewProc("BringWindowToTop")
-	pSetActiveWindow       = user32.NewProc("SetActiveWindow")
 	pSetWindowPos          = user32.NewProc("SetWindowPos")
-	pSetWindowLongPtrW     = user32.NewProc("SetWindowLongPtrW")
 	pGetWindowTextW        = user32.NewProc("GetWindowTextW")
 	pGetWindowTextLengthW  = user32.NewProc("GetWindowTextLengthW")
 	pSetWindowTextW        = user32.NewProc("SetWindowTextW")
@@ -343,20 +307,12 @@ var (
 	pCreatePopupMenu       = user32.NewProc("CreatePopupMenu")
 	pAppendMenuW           = user32.NewProc("AppendMenuW")
 	pDestroyMenu           = user32.NewProc("DestroyMenu")
-	pCheckMenuRadioItem    = user32.NewProc("CheckMenuRadioItem")
 	pChangeMessageFilter   = user32.NewProc("ChangeWindowMessageFilterEx")
 	pRegisterWindowMsg     = user32.NewProc("RegisterWindowMessageW")
 	pNotifyWinEvent        = user32.NewProc("NotifyWinEvent")
 	pAdjustWindowRectEx    = user32.NewProc("AdjustWindowRectEx")
-	pGetClientRect         = user32.NewProc("GetClientRect")
-	pGetWindowRect         = user32.NewProc("GetWindowRect")
-	pInvalidateRect        = user32.NewProc("InvalidateRect")
 	pSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
 	pGetSystemMetrics      = user32.NewProc("GetSystemMetrics")
-	pGetDC                 = user32.NewProc("GetDC")
-	pReleaseDC             = user32.NewProc("ReleaseDC")
-	pMessageBeep           = user32.NewProc("MessageBeep")
-	pLoadImageW            = user32.NewProc("LoadImageW")
 	pLoadIconW             = user32.NewProc("LoadIconW")
 	pLoadCursorW           = user32.NewProc("LoadCursorW")
 	pDestroyIcon           = user32.NewProc("DestroyIcon")
@@ -364,27 +320,19 @@ var (
 	pSetProcessDPIAware    = user32.NewProc("SetProcessDPIAware")
 	pSetProcessDpiAwareCtx = user32.NewProc("SetProcessDpiAwarenessContext")
 	pGetDpiForSystem       = user32.NewProc("GetDpiForSystem")
-	pGetDpiForWindow       = user32.NewProc("GetDpiForWindow")
 
-	pCreateFontW   = gdi32.NewProc("CreateFontW")
-	pDeleteObject  = gdi32.NewProc("DeleteObject")
-	pGetDeviceCaps = gdi32.NewProc("GetDeviceCaps")
+	pCreateFontW  = gdi32.NewProc("CreateFontW")
+	pDeleteObject = gdi32.NewProc("DeleteObject")
 
 	pGetModuleHandleW      = kernel32.NewProc("GetModuleHandleW")
 	pAttachConsole         = kernel32.NewProc("AttachConsole")
 	pFreeConsole           = kernel32.NewProc("FreeConsole")
 	pSetConsoleCtrlHandler = kernel32.NewProc("SetConsoleCtrlHandler")
-	pCancelSynchronousIo   = kernel32.NewProc("CancelSynchronousIo")
-	pGetCurrentThread      = kernel32.NewProc("GetCurrentThread")
-	pReadFile              = kernel32.NewProc("ReadFile")
-	pWriteFile             = kernel32.NewProc("WriteFile")
 
 	pShellNotifyIconW = shell32.NewProc("Shell_NotifyIconW")
 	pShellExecuteExW  = shell32.NewProc("ShellExecuteExW")
 
 	pGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
-
-	pConvertStringSdW = advapi32.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
 
 	pSetupDiGetClassDevsW          = setupapi.NewProc("SetupDiGetClassDevsW")
 	pSetupDiEnumDeviceInfo         = setupapi.NewProc("SetupDiEnumDeviceInfo")
@@ -498,24 +446,10 @@ func messageBoxFor(owner uintptr, text, caption string, flags uint32) int32 {
 // --- Window/control helpers ---------------------------------------------
 
 const (
-	wmNcCreate        = 0x0081
-	wmGetDlgCode      = 0x0087
-	wmGetObject       = 0x003D
-	wmSetIcon         = 0x0080
-	wmSysCommand      = 0x0112
-	scClose           = 0xF060
 	dmGetDefID        = 0x0400
 	dcHasDefID        = 0x534B
-	dlgcWantAllKeys   = 0x0004
-	objIDWindow       = 0
-	emSetSel          = 0x00B1
-	iconSmall         = 0
-	iconBig           = 1
 	mbOK              = 0x00000000
 	mbIconError       = 0x00000010
-	mbIconWarning     = 0x00000030
-	mbIconInfo        = 0x00000040
-	swpNoSize         = 0x0001
 	swpNoMove         = 0x0002
 	smCXIcon          = 11
 	smCYIcon          = 12

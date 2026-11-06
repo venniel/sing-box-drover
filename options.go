@@ -64,7 +64,7 @@ func loadOptions(filename string) droverOptions {
 	}
 
 	if value, found := iniGet(lines, optionsSection, "sb-config-file"); found {
-		if !strings.Contains(value, ":") {
+		if !isRootedPath(value) {
 			base := value
 			coreDir := includeTrailingPathDelimiter(filepath.Dir(opts.SBExe))
 			for _, candidate := range []string{currentDir + base, coreDir + base} {
@@ -87,7 +87,7 @@ func loadOptions(filename string) droverOptions {
 		opts.SelectorMenuLayout = parseSelectorMenuLayout(value)
 	}
 	if value, found := iniGet(lines, optionsSection, "log-file"); found {
-		if value != "" && !strings.Contains(value, ":") {
+		if value != "" && !isRootedPath(value) {
 			value = currentDir + value
 		}
 		opts.LogFile = value
@@ -149,7 +149,21 @@ func updateOptionsFile(filename string, update func([]string) []string) error {
 	if hadBOM {
 		text = "\uFEFF" + text
 	}
-	return os.WriteFile(filename, []byte(text), 0o644)
+	return writeFileAtomically(filename, []byte(text))
+}
+
+// writeFileAtomically renames over the target so a crash mid-write cannot
+// leave a truncated options file behind.
+func writeFileAtomically(filename string, data []byte) error {
+	tmp := filename + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filename); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func parseTunStartMode(value string) tunStartMode {

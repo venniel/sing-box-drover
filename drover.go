@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -226,7 +225,7 @@ func (d *drover) systemProxyEnabled() bool {
 func (d *drover) storeSystemProxy(value bool) {
 	d.options.SystemProxyAuto = value
 	if err := saveSystemProxyState(d.optionsFile, value); err != nil {
-		d.log(strings.TrimSpace("Failed to persist system proxy state. " + err.Error()))
+		d.log("Failed to persist system proxy state. " + err.Error())
 	}
 }
 
@@ -237,7 +236,7 @@ func (d *drover) storeTun(value bool) {
 		d.options.TunStartMode = tsmOn
 	}
 	if err := saveTunState(d.optionsFile, value); err != nil {
-		d.log(strings.TrimSpace("Failed to persist TUN state. " + err.Error()))
+		d.log("Failed to persist TUN state. " + err.Error())
 	}
 }
 

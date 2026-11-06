@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -19,9 +18,11 @@ const (
 )
 
 type configUpdater struct {
-	source configSource
-	cli    *singBoxCLI
-	logger *logger
+	source    configSource
+	cli       *singBoxCLI
+	logger    *logger
+	transport *http.Transport
+	client    *http.Client
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -32,12 +33,19 @@ type configUpdater struct {
 }
 
 func newConfigUpdater(source configSource, cli *singBoxCLI, l *logger) *configUpdater {
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: updaterConnTimeout}).DialContext,
+		ResponseHeaderTimeout: updaterResponseTimeout,
+	}
 	u := &configUpdater{
-		source: source,
-		cli:    cli,
-		logger: l,
-		stopCh: make(chan struct{}),
-		done:   make(chan struct{}),
+		source:    source,
+		cli:       cli,
+		logger:    l,
+		transport: transport,
+		client:    &http.Client{Transport: transport},
+		stopCh:    make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 	go u.run()
 	return u
@@ -53,6 +61,7 @@ func (u *configUpdater) stop() {
 		u.mu.Unlock()
 	})
 	<-u.done
+	u.transport.CloseIdleConnections()
 }
 
 func (u *configUpdater) run() {
@@ -106,25 +115,17 @@ func (u *configUpdater) doUpdate() {
 		u.mu.Unlock()
 	}()
 
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: updaterConnTimeout}).DialContext,
-		ResponseHeaderTimeout: updaterResponseTimeout,
-	}
-	client := &http.Client{Transport: transport}
-	defer transport.CloseIdleConnections()
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.source.BpfProfile.RemotePath, nil)
 	if err != nil {
-		u.log(strings.TrimSpace("Config update failed. " + err.Error()))
+		u.log("Config update failed. " + err.Error())
 		return
 	}
 	req.Header.Set("User-Agent", u.buildUserAgent())
 
-	resp, err := client.Do(req)
+	resp, err := u.client.Do(req)
 	if err != nil {
 		if ctx.Err() == nil {
-			u.log(strings.TrimSpace("Config update failed. " + err.Error()))
+			u.log("Config update failed. " + err.Error())
 		}
 		return
 	}
@@ -137,7 +138,7 @@ func (u *configUpdater) doUpdate() {
 
 	payload, err := io.ReadAll(resp.Body)
 	if err != nil {
-		u.log(strings.TrimSpace("Config update failed. " + err.Error()))
+		u.log("Config update failed. " + err.Error())
 		return
 	}
 
@@ -149,7 +150,7 @@ func (u *configUpdater) doUpdate() {
 
 	jsonText := string(payload)
 	if _, err := readSingBoxConfig(jsonText); err != nil {
-		u.log(strings.TrimSpace("Config update failed. " + err.Error()))
+		u.log("Config update failed. " + err.Error())
 		return
 	}
 
@@ -158,7 +159,7 @@ func (u *configUpdater) doUpdate() {
 	updated.LastUpdated = time.Now().UnixMilli()
 
 	if err := writeBpfProfileToFile(u.source.FilePath, updated); err != nil {
-		u.log(strings.TrimSpace("Config update failed. " + err.Error()))
+		u.log("Config update failed. " + err.Error())
 		return
 	}
 

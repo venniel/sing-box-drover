@@ -9,7 +9,8 @@ import (
 const (
 	appTitle = "sing-box-go"
 
-	// Outwait the old instance's graceful core stop (max ~5s) on restart.
+	// Outwait the old instance's graceful core stop (10s budget) plus its
+	// output drain on restart.
 	restartHandoffTimeoutMs = 15000
 )
 

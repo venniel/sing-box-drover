@@ -69,8 +69,9 @@ type mainUI struct {
 	menuActions   map[uint32]selectorAction
 	menuModes     []string
 
-	opsMu sync.Mutex
-	ops   []func()
+	opsMu     sync.Mutex
+	ops       []func()
+	opsQueued bool
 }
 
 var mainWindowProc = windows.NewCallback(mainWndProcFunc)
@@ -191,8 +192,13 @@ func (u *mainUI) post(fn func()) {
 	}
 	u.opsMu.Lock()
 	u.ops = append(u.ops, fn)
+	queued := u.opsQueued
+	u.opsQueued = true
 	u.opsMu.Unlock()
-	postMessage(u.hwnd, wmAppDispatch, 0, 0)
+	// One in-flight message is enough: drainPosted flushes the whole queue.
+	if !queued {
+		postMessage(u.hwnd, wmAppDispatch, 0, 0)
+	}
 }
 
 func (u *mainUI) drainPosted() {
@@ -200,6 +206,9 @@ func (u *mainUI) drainPosted() {
 		u.opsMu.Lock()
 		ops := u.ops
 		u.ops = nil
+		// Clear the flag before running the ops so posts made while they run
+		// deliver a fresh message.
+		u.opsQueued = false
 		u.opsMu.Unlock()
 		if len(ops) == 0 {
 			return
@@ -226,10 +235,6 @@ func (u *mainUI) handleMessage(hwnd, msg, wparam, lparam uintptr) uintptr {
 
 	case wmAppTray:
 		u.handleTray(wparam, lparam)
-		return 0
-
-	case wmCommand:
-		u.handleCommand(loword(wparam), hiword(wparam))
 		return 0
 
 	case wmDroverCanClose:
@@ -267,8 +272,12 @@ func (u *mainUI) handleMessage(hwnd, msg, wparam, lparam uintptr) uintptr {
 
 func (u *mainUI) cleanup() {
 	u.removeTrayIcon()
+	// Disabled/TUN may have fallen back to the enabled icon; destroy each
+	// distinct handle once.
+	destroyed := make(map[uintptr]bool)
 	for _, icon := range []uintptr{u.hIconEnabled, u.hIconDisabled, u.hIconTun, u.hIconLarge} {
-		if icon != 0 {
+		if icon != 0 && !destroyed[icon] {
+			destroyed[icon] = true
 			pDestroyIcon.Call(icon)
 		}
 	}
@@ -575,37 +584,6 @@ func (u *mainUI) appendNodeMenu(menu uintptr) {
 	}
 
 	appendSubMenu(menu, sub, "节点")
-}
-
-func (u *mainUI) handleCommand(id, notification uint32) {
-	switch id {
-	case idMenuRestart:
-		if notification == bnClicked {
-			u.restartApp()
-		}
-	case idMenuAutostart:
-		if notification == bnClicked {
-			u.toggleAutostart()
-		}
-	case idMenuHomepage:
-		shellOpen("https://github.com/hdrover/sing-box-drover")
-	case idMenuDashboard:
-		if url := u.d.sbConfig.ClashAPI.DashboardURL(); url != "" {
-			shellOpen(url)
-		}
-	case idMenuQuit:
-		if notification == bnClicked {
-			u.requestClose()
-		}
-	case idMenuTun:
-		if notification == bnClicked {
-			u.toggleTun(!u.isTunActive)
-		}
-	case idMenuSystemProxy:
-		if notification == bnClicked {
-			u.toggleSystemProxy(!u.isSystemProxyActive, true, true)
-		}
-	}
 }
 
 func (u *mainUI) executeMenuCommand(cmd uint32) {

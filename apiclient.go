@@ -35,7 +35,7 @@ func (c *coreAPIClient) checkReady() bool {
 
 	c.log("API check...")
 	if _, err := c.request("GET", "/version", "", time.Second); err != nil {
-		c.log(strings.TrimSpace("API check: failed. " + err.Error()))
+		c.log("API check: failed. " + err.Error())
 		return false
 	}
 	c.log("API check: successful.")
