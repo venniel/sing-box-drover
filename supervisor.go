@@ -63,18 +63,15 @@ const (
 	cekConfigModes
 	cekSelectorDone
 	cekModeDone
-	cekSelectorStates
 )
 
 type coreEvent struct {
-	Kind           coreEventKind
-	State          coreState
-	Msg            string
-	RequestID      int
-	Mode           string
-	Modes          []string
-	SelectorNow    map[string]string
-	SelectorSerial int
+	Kind      coreEventKind
+	State     coreState
+	Msg       string
+	RequestID int
+	Mode      string
+	Modes     []string
 }
 
 type selectorTask struct {
@@ -90,19 +87,16 @@ const (
 	cmdStop
 	cmdSetSelectors
 	cmdSetMode
-	cmdQuerySelectorStates
 )
 
-var coreCommandNames = [...]string{"None", "Start", "Stop", "SetSelectors", "SetMode", "QuerySelectorStates"}
+var coreCommandNames = [...]string{"None", "Start", "Stop", "SetSelectors", "SetMode"}
 
 type coreCommand struct {
-	Kind           coreCommandKind
-	ConfigJSON     string
-	SelectorTasks  []selectorTask
-	RequestID      int
-	Mode           string
-	SelectorNames  []string
-	SelectorSerial int
+	Kind          coreCommandKind
+	ConfigJSON    string
+	SelectorTasks []selectorTask
+	RequestID     int
+	Mode          string
 }
 
 type coreSupervisor struct {
@@ -212,10 +206,6 @@ func (s *coreSupervisor) requestSetMode(mode string) bool {
 	return s.post(coreCommand{Kind: cmdSetMode, Mode: mode})
 }
 
-func (s *coreSupervisor) requestQuerySelectorStates(names []string, serial int) bool {
-	return s.post(coreCommand{Kind: cmdQuerySelectorStates, SelectorNames: names, SelectorSerial: serial})
-}
-
 func (s *coreSupervisor) post(cmd coreCommand) bool {
 	select {
 	case s.commands <- cmd:
@@ -250,8 +240,6 @@ func (s *coreSupervisor) handleCommand(cmd coreCommand) {
 		s.doSetSelectors(cmd.SelectorTasks, cmd.RequestID)
 	case cmdSetMode:
 		s.doSetMode(cmd.Mode)
-	case cmdQuerySelectorStates:
-		s.doQuerySelectorStates(cmd.SelectorNames, cmd.SelectorSerial)
 	}
 }
 
@@ -549,15 +537,15 @@ func (s *coreSupervisor) doSetMode(mode string) {
 	s.notifyEvent(coreEvent{Kind: cekModeDone, Mode: mode})
 }
 
-// doQuerySelectorStates fetches every selector's active outbound in a single
-// request instead of one per selector, so a slow core cannot stall the
-// supervisor loop for N times the per-request timeout.
-func (s *coreSupervisor) doQuerySelectorStates(names []string, serial int) {
+// querySelectorStates reads the active outbound of every selector in a single
+// /proxies request. It is called from the UI thread right before the tray
+// menu is built so the menu reflects live state on its first open; a local
+// request costs milliseconds and a dead core only costs the query timeout.
+// Returns nil when the core cannot be queried.
+func (s *coreSupervisor) querySelectorStates(names []string) map[string]string {
 	text, err := s.api.request("GET", "/proxies", "", selectorQueryTimeout)
 	if err != nil {
-		// Core is likely unavailable; keep the cached values.
-		s.notifyEvent(coreEvent{Kind: cekSelectorStates, SelectorSerial: serial})
-		return
+		return nil
 	}
 
 	var resp struct {
@@ -565,15 +553,17 @@ func (s *coreSupervisor) doQuerySelectorStates(names []string, serial int) {
 			Now string `json:"now"`
 		} `json:"proxies"`
 	}
+	if err := json.Unmarshal([]byte(text), &resp); err != nil {
+		return nil
+	}
+
 	states := make(map[string]string, len(names))
-	if err := json.Unmarshal([]byte(text), &resp); err == nil {
-		for _, name := range names {
-			if p, ok := resp.Proxies[name]; ok && p.Now != "" {
-				states[name] = p.Now
-			}
+	for _, name := range names {
+		if p, ok := resp.Proxies[name]; ok && p.Now != "" {
+			states[name] = p.Now
 		}
 	}
-	s.notifyEvent(coreEvent{Kind: cekSelectorStates, SelectorNow: states, SelectorSerial: serial})
+	return states
 }
 
 func (s *coreSupervisor) doSetSelectors(tasks []selectorTask, requestID int) {

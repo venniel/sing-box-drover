@@ -40,9 +40,7 @@ type drover struct {
 	clashMode         string
 	clashModes        []string
 
-	selectorStates       map[string]string
-	selectorQueryPending bool
-	selectorSerial       int
+	selectorStates map[string]string
 
 	mu                sync.Mutex
 	dispatch          func(func())
@@ -175,18 +173,6 @@ func (d *drover) handleCoreEvent(ev coreEvent) {
 		}
 		d.notifyEvent(droverEvent{Kind: dekClashModes})
 
-	case cekSelectorStates:
-		d.selectorQueryPending = false
-		if ev.SelectorSerial != d.selectorSerial {
-			return
-		}
-		if d.selectorStates == nil {
-			d.selectorStates = map[string]string{}
-		}
-		for name, now := range ev.SelectorNow {
-			d.selectorStates[name] = now
-		}
-
 	case cekSelectorDone:
 		d.notifyEvent(droverEvent{Kind: dekCoreEvent, CoreEvent: ev})
 	}
@@ -249,7 +235,6 @@ func (d *drover) editSelector(selectorIdx, outboundIdx, requestID int) bool {
 		return false
 	}
 
-	d.selectorSerial++
 	d.selectors[selectorIdx].DefaultIndex = outboundIdx
 	if d.selectorStates == nil {
 		d.selectorStates = map[string]string{}
@@ -260,17 +245,29 @@ func (d *drover) editSelector(selectorIdx, outboundIdx, requestID int) bool {
 	return d.supervisor.requestSetSelectors([]selectorTask{task}, requestID)
 }
 
-// refreshSelectorStates asks the core for the active outbound of every selector.
-// The request runs in the background so opening the menu is never blocked.
+// refreshSelectorStates asks the core for the active outbound of every
+// selector. It runs synchronously before the tray menu is built so the first
+// open already shows changes made elsewhere (for example via the dashboard);
+// on failure the cached values are kept.
 func (d *drover) refreshSelectorStates() {
-	if len(d.selectors) == 0 || d.selectorQueryPending {
+	if len(d.selectors) == 0 {
 		return
 	}
 	names := make([]string, 0, len(d.selectors))
 	for _, selector := range d.selectors {
 		names = append(names, selector.Name)
 	}
-	d.selectorQueryPending = d.supervisor.requestQuerySelectorStates(names, d.selectorSerial)
+
+	states := d.supervisor.querySelectorStates(names)
+	if states == nil {
+		return
+	}
+	if d.selectorStates == nil {
+		d.selectorStates = map[string]string{}
+	}
+	for name, now := range states {
+		d.selectorStates[name] = now
+	}
 }
 
 func (d *drover) selectorNow(name string) (string, bool) {
