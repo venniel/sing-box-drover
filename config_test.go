@@ -135,11 +135,13 @@ func TestReadSingBoxConfigCaseInsensitiveTypes(t *testing.T) {
 }
 
 func TestClashAPIDashboardURL(t *testing.T) {
-	if got := (clashAPIConfig{}).DashboardURL(); got != "" {
-		t.Errorf("DashboardURL without controller = %q, want empty", got)
+	online := "https://venniel.github.io/Yacd-meta"
+
+	if got := (clashAPIConfig{}).DashboardURL(); got != online {
+		t.Errorf("DashboardURL without external_ui = %q, want %q", got, online)
 	}
 
-	cfg := clashAPIConfig{ExternalController: "127.0.0.1:9090"}
+	cfg := clashAPIConfig{ExternalController: "127.0.0.1:9090", ExternalUI: "ui"}
 	if got, want := cfg.DashboardURL(), "http://127.0.0.1:9090/ui/"; got != want {
 		t.Errorf("DashboardURL = %q, want %q", got, want)
 	}
@@ -154,13 +156,18 @@ func TestClashAPIDashboardURL(t *testing.T) {
 		t.Errorf("DashboardURL = %q, want %q", got, want)
 	}
 
-	cfg = clashAPIConfig{ExternalController: "127.0.0.1:9090", Secret: "a b&c"}
+	cfg = clashAPIConfig{ExternalController: "127.0.0.1:9090", ExternalUI: "ui", Secret: "a b&c"}
 	if got, want := cfg.DashboardURL(), "http://127.0.0.1:9090/ui/?secret=a+b%26c"; got != want {
 		t.Errorf("DashboardURL = %q, want %q", got, want)
 	}
 
 	cfg = clashAPIConfig{ExternalController: "127.0.0.1:9090", ExternalUI: " https://example.com/ui/ "}
 	if got, want := cfg.DashboardURL(), "https://example.com/ui/"; got != want {
-		t.Errorf("DashboardURL with external_ui = %q, want %q", got, want)
+		t.Errorf("DashboardURL with absolute external_ui = %q, want %q", got, want)
+	}
+
+	cfg = clashAPIConfig{ExternalUI: "ui"}
+	if got := cfg.DashboardURL(); got != online {
+		t.Errorf("DashboardURL with external_ui but no controller = %q, want %q", got, online)
 	}
 }

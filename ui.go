@@ -473,9 +473,7 @@ func (u *mainUI) buildMenu() (uintptr, bool) {
 	}
 	appendMenu(menu, proxyFlags, idMenuSystemProxy, "系统代理")
 
-	if d.sbConfig.ClashAPI.DashboardURL() != "" {
-		appendMenu(menu, mfString, idMenuDashboard, "面板")
-	}
+	appendMenu(menu, mfString, idMenuDashboard, "面板")
 
 	appendMenu(menu, mfString, idMenuQuit, "退出")
 	return menu, true
@@ -598,9 +596,7 @@ func (u *mainUI) executeMenuCommand(cmd uint32) {
 		shellOpen("https://github.com/hdrover/sing-box-drover")
 		return
 	case idMenuDashboard:
-		if url := u.d.sbConfig.ClashAPI.DashboardURL(); url != "" {
-			shellOpen(url)
-		}
+		shellOpen(u.d.sbConfig.ClashAPI.DashboardURL())
 		return
 	case idMenuQuit:
 		u.requestClose()

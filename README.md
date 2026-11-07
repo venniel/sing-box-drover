@@ -26,7 +26,8 @@ becoming another all-in-one GUI client.
       the core at startup; persistence is left to the core (see below).
     - **TUN 模式** (TUN mode) — available when the config contains a `tun` inbound; asks for elevation when needed
     - **系统代理** (System proxy) — toggles the Windows proxy settings
-    - **面板** (Dashboard) — opens the Clash dashboard if one is configured
+    - **面板** (Dashboard) — opens the dashboard served by the core when `external_ui` is configured, otherwise the
+      hosted yacd panel
     - **退出** (Quit) — gracefully stops the core and exits
 - The system proxy is restored on the next launch when it was left enabled, and is disabled on normal exit
 - TUN state is remembered across restarts; enabling TUN relaunches the program elevated (UAC)
@@ -115,8 +116,9 @@ Node switching, mode switching and the dashboard link use the Clash API:
 
 - `external_controller` — API address. `0.0.0.0` is rewritten to `127.0.0.1` for the dashboard link.
 - `secret` — API token. It is appended to the dashboard URL automatically.
-- `external_ui` — optional. An `http(s)://` URL is opened as-is; any other value is ignored and
-  `http://<controller>/ui/` is used.
+- `external_ui` — optional. When set, the dashboard the core serves at `http://<controller>/ui/` is opened (an
+  absolute `http(s)://` value is opened as-is). When absent, the hosted panel at
+  <https://venniel.github.io/Yacd-meta> is opened.
 
 If the config contains selectors but no `clash_api` section, the program adds one in memory with
 `external_controller = "127.0.0.1:9090"` and a generated secret. This works for the current run only; the config file is

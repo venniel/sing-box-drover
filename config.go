@@ -28,12 +28,24 @@ func (c clashAPIConfig) IsConfigured() bool {
 	return c.ExternalController != ""
 }
 
+// onlineDashboardURL is opened when the config does not serve a dashboard
+// of its own.
+const onlineDashboardURL = "https://venniel.github.io/Yacd-meta"
+
+// DashboardURL returns the address opened by the tray menu's dashboard
+// item. A config with external_ui points at the copy the core serves; an
+// absolute external_ui URL is used as-is. Without external_ui the hosted
+// yacd panel is opened.
 func (c clashAPIConfig) DashboardURL() string {
-	if c.ExternalController == "" {
-		return ""
+	ui := strings.TrimSpace(c.ExternalUI)
+	if ui == "" {
+		return onlineDashboardURL
 	}
-	if ui := strings.TrimSpace(c.ExternalUI); hasPrefixFold(ui, "http://") || hasPrefixFold(ui, "https://") {
+	if hasPrefixFold(ui, "http://") || hasPrefixFold(ui, "https://") {
 		return ui
+	}
+	if c.ExternalController == "" {
+		return onlineDashboardURL
 	}
 
 	host := c.ExternalController
